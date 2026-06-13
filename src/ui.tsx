@@ -61,7 +61,7 @@ export function Topbar() {
   return (
     <header className="sticky top-[14px] z-[60] mt-[14px] px-[clamp(18px,4vw,36px)]" id="topbar">
       <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-[18px] max-w-[var(--maxw)] mx-auto py-[9px] pl-4 pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
-        <div className="justify-self-start"><Logo /></div>
+        <div className="flex items-center justify-self-start"><Logo /></div>
         <nav className="flex items-center gap-1 justify-self-center max-[920px]:hidden">
           <Link to="/docs" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Docs</Link>
           <Link to="/guides" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Guides</Link>
