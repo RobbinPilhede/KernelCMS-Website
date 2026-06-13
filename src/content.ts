@@ -1031,6 +1031,49 @@ curl http://localhost:3000/api/posts/<id>/geo                 # text/markdown - 
 ${warn(`<strong>Published-only guarantee.</strong> Every generator runs through the access-checked pipeline as an <em>anonymous</em> principal filtering <code>_status === 'published'</code>, with no <code>overrideAccess</code>. Drafts, scheduled-but-unpublished docs, access-restricted documents, and read-denied fields <strong>never</strong> appear. Output is size-bounded by <code>maxDocsPerCollection</code> (default 1000) and <code>maxDocsTotal</code> (default 5000).`)}`
     },
     {
+      slug: 'structured-data', group: 'Data & APIs', nav: 'Structured data', title: 'Structured data (JSON-LD)',
+      lead: 'Emit schema.org JSON-LD for your documents straight from your typed model - rich results for search engines, machine-understandable facts for AI answer engines, access-checked and XSS-safe.',
+      html: `
+<p>KernelCMS can generate <strong>schema.org JSON-LD</strong> for your documents - the structured-data format search engines read to render rich results, and AI answer engines read to understand <em>what a page is</em>. The lever is one optional <code>structuredData</code> block, and the output is built from your typed content model through the <strong>same access-checked read path</strong> as every other read - so there's no <code>&lt;script type="application/ld+json"&gt;</code> to hand-write per template and watch drift. It completes the discoverability trio with <a href="#/docs/semantic-search">semantic search</a> (retrievable) and <a href="#/docs/ai-discoverability">llms.txt / GEO</a> (ingestible &amp; citable). The whole feature is <strong>off until you add the block</strong>.</p>
+
+<h2 id="config">Configure structuredData</h2>
+<p>Each entry names a collection, the schema.org <code>type</code> to emit, and optionally a <code>mapping</code> and a <code>urlPattern</code>.</p>
+${code('ts', `export default defineConfig({
+  structuredData: {
+    baseUrl: 'https://acme.com',          // builds absolute canonical @id / image URLs
+    collections: [
+      // Smart defaults: fields are mapped automatically.
+      { slug: 'posts', type: 'BlogPosting', urlPattern: '/blog/:slug' },
+      // Explicit mapping: schema.org property -> your field name.
+      { slug: 'authors', type: 'Person', mapping: { name: 'full_name', email: 'contact' } },
+    ],
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="defaults">Smart-default mapping</h2>
+<p>With no explicit <code>mapping</code>, KernelCMS infers properties from your field set: the title / <code>useAsTitle</code> field -> <code>name</code> + <code>headline</code>; the first richText/textarea -> <code>articleBody</code> (plus a truncated <code>description</code>); a <code>date</code> named publish/posted/created -> <code>datePublished</code> (else <code>createdAt</code>) and updated/modified -> <code>dateModified</code> (else <code>updatedAt</code>); <code>email</code> -> <code>email</code>; an image/upload -> <code>image</code> (URL); an author-ish relationship -> <code>author</code> (<code>{ '@type': 'Person', name }</code>). An explicit <code>mapping</code> <strong>replaces</strong> the defaults entirely.</p>
+
+<h2 id="ops">The two operations &amp; embedding</h2>
+<p>Both are on the Local API and both read through the access-checked pipeline, with the principal taken from <code>req</code>:</p>
+${code('ts', `// (a) The JSON-LD object, or null if missing / not readable / disabled.
+const ld = await kernel.jsonLd({ collection: 'posts', id, req })
+//   -> { '@context': 'https://schema.org', '@type': 'BlogPosting',
+//        '@id': 'https://acme.com/blog/hello', name, headline, articleBody,
+//        datePublished, author: { '@type': 'Person', name } }
+
+// (b) The ready-to-embed <script> string, HTML-escaped; '' when there's no doc.
+const script = await kernel.jsonLdScript({ collection: 'posts', id, req })
+//   -> '<script type="application/ld+json">{…}</script>'`)}
+<p>Drop the <code>jsonLdScript</code> string into your page <code>&lt;head&gt;</code> as raw HTML - it's a complete, escaped <code>&lt;script&gt;</code> element, so the content cannot break out of the tag.</p>
+
+<h2 id="rest">The REST surface</h2>
+<p>Each document's JSON-LD is also available over HTTP - access-checked, principal from the request:</p>
+${code('bash', `curl http://localhost:3000/api/posts/<id>/jsonld   # application/ld+json (404 when null/disabled)`)}
+
+${tip(`<strong>Access-checked &amp; XSS-safe.</strong> Reads go through the same pipeline as every live read: a draft, private, or read-denied document or field is <strong>never</strong> emitted (a public/anonymous caller sees only published, publicly readable content). <code>jsonLdScript</code> HTML-escapes <code>&lt;</code>/<code>&gt;</code>/<code>&amp;</code> so content can't break out of the <code>&lt;script&gt;</code> tag, and the <code>@id</code> / <code>image</code> URLs are injection-safe (no <code>javascript:</code> / <code>data:</code> / traversal). Red-teamed to Risk LOW. The standalone op is the surface - it is not auto-injected into the GEO output.`)}`
+    },
+    {
       slug: 'realtime', group: 'Data & APIs', nav: 'Real-time', title: 'Real-time change feed',
       lead: 'Opt in and every content write lands on a durable, access-filtered feed - pull it for CDC, stream it over SSE for live UIs, or subscribe in-process. Metadata only, never a leaked body.',
       html: `
