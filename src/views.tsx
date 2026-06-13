@@ -16,7 +16,7 @@ function Card({ to, params, tag, title, excerpt, meta, cover, featured, eyebrow:
         <div className="card-thumb !aspect-auto min-h-[320px] max-[860px]:min-h-[220px]"><CoverArt kind={cover} alt={`${title} - cover art`} /></div>
         <div className="flex flex-col justify-center gap-[14px] p-[clamp(28px,4vw,48px)]">
           <span className="font-[family-name:var(--mono)] text-xs text-[var(--faint)]">{ey}</span>
-          <h3 className="text-[clamp(1.5rem,1.1rem+1.6vw,2.1rem)] font-semibold tracking-[-0.02em] leading-tight">{title}</h3>
+          <h2 className="text-[clamp(1.5rem,1.1rem+1.6vw,2.1rem)] font-semibold tracking-[-0.02em] leading-tight">{title}</h2>
           <p className="text-base text-[var(--muted)] text-pretty">{excerpt}</p>
           <div className="flex items-center gap-[10px] text-[13px] text-[var(--faint)] mt-[6px]"><span>{meta}</span></div>
           <span className="inline-flex items-center gap-2 mt-[6px] font-semibold text-sm text-[var(--text)] [&>svg]:w-4 [&>svg]:h-4 [&>svg]:transition-transform group-hover:[&>svg]:translate-x-1">Read more <Icon name="arrow" /></span>
@@ -29,7 +29,7 @@ function Card({ to, params, tag, title, excerpt, meta, cover, featured, eyebrow:
       <div className="card-thumb"><CoverArt kind={cover} alt={`${title} - cover art`} /></div>
       <div className="flex flex-col gap-[11px] p-6 pb-[26px]">
         <span className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--muted)]">{tag}</span>
-        <h3 className="text-[19px] font-semibold leading-[1.25]">{title}</h3>
+        <h2 className="text-[19px] font-semibold leading-[1.25]">{title}</h2>
         <p className="text-[14.5px] leading-[1.5] text-[var(--muted)] text-pretty flex-1">{excerpt}</p>
         <div className="flex items-center gap-[10px] text-[13px] text-[var(--faint)]"><span>{meta}</span></div>
       </div>

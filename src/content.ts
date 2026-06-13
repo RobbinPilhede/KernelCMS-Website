@@ -1823,38 +1823,38 @@ npx kernel migrate          # apply the additive plan`)}
   };
   const BLOG_INDEX_SEO = {
     title: 'Headless CMS Comparisons & Engineering Notes | KernelCMS',
-    description: 'KernelCMS vs Payload, Sanity, Strapi, Contentful, and Directus, compared with hard facts and code, plus engineering notes on building an open-source headless CMS.',
+    description: 'KernelCMS vs Payload, Sanity, Strapi, Contentful, and Directus, compared with hard facts and code, plus notes on building an open-source headless CMS.',
   };
   const GUIDES_INDEX_SEO = {
     title: 'KernelCMS Guides & Tutorials | Headless CMS',
-    description: 'Step-by-step KernelCMS guides: embed the CMS in Next.js, add uploads and image variants, enable auth and two-factor, wire up commerce, and deploy a single container.',
+    description: 'Step-by-step KernelCMS guides: embed the CMS in Next.js, add uploads, enable auth and two-factor, wire up commerce, and deploy a single container.',
   };
   const DOCS_INDEX_SEO = {
     title: 'KernelCMS Documentation | TypeScript Headless CMS',
-    description: 'KernelCMS documentation: model content in one kernel.config.ts and get a typed engine, REST + GraphQL, a Local API, a React admin, and a CLI. Guides, reference, and how-tos.',
+    description: 'KernelCMS documentation: model content in one kernel.config.ts and get a typed engine, REST + GraphQL, a Local API, a React admin, and a CLI.',
   };
 
   const SEO = {
     // Comparisons (the highest-value, highest-intent pages)
-    'kernelcms-vs-payload': { metaTitle: 'KernelCMS vs Payload: TypeScript CMS Comparison (2026)', metaDesc: 'KernelCMS vs Payload, compared: two open-source, TypeScript, config-as-code CMSs. The big difference is framework lock-in. Hard facts, side-by-side code, and a verdict.' },
-    'kernelcms-vs-sanity': { metaTitle: 'KernelCMS vs Sanity: Self-Hosted vs Hosted CMS (2026)', metaDesc: 'KernelCMS vs Sanity, compared: self-hosted and MIT with full data ownership vs Sanity\'s hosted Content Lake and real-time editing. Hard facts, code, and when to pick each.' },
-    'kernelcms-vs-strapi': { metaTitle: 'KernelCMS vs Strapi: Code-First vs Admin-First CMS', metaDesc: 'KernelCMS vs Strapi, compared: typed, code-first content modeling vs Strapi\'s admin UI and plugin marketplace. Hard facts, side-by-side code, and a clear verdict.' },
+    'kernelcms-vs-payload': { metaTitle: 'KernelCMS vs Payload: TypeScript CMS Comparison (2026)', metaDesc: 'KernelCMS vs Payload, compared: two open-source, TypeScript, config-as-code CMSs. The big difference is framework lock-in. Hard facts, code, and a verdict.' },
+    'kernelcms-vs-sanity': { metaTitle: 'KernelCMS vs Sanity: Self-Hosted vs Hosted CMS (2026)', metaDesc: 'KernelCMS vs Sanity, compared: self-hosted and MIT with full data ownership vs Sanity\'s hosted Content Lake and real-time editing. When to pick each.' },
+    'kernelcms-vs-strapi': { metaTitle: 'KernelCMS vs Strapi: Code-First vs Admin-First CMS', metaDesc: 'KernelCMS vs Strapi, compared: typed, code-first content modeling vs Strapi\'s admin UI and plugin marketplace. Hard facts, code, and a clear verdict.' },
     'kernelcms-vs-contentful': { metaTitle: 'KernelCMS vs Contentful: Self-Hosted CMS Alternative', metaDesc: 'KernelCMS vs Contentful, compared: the self-hosted, MIT, code-first alternative to Contentful\'s enterprise SaaS. Hard facts on cost, lock-in, APIs, and hosting.' },
-    'kernelcms-vs-directus': { metaTitle: 'KernelCMS vs Directus: Config-First vs Database-First', metaDesc: 'KernelCMS vs Directus, compared: config-first and MIT vs database-first and BSL. Which headless CMS fits a new code-owned model vs wrapping an existing SQL database.' },
-    'agent-native-cms': { metaTitle: 'The Content Layer Agents and Humans Share | KernelCMS', metaDesc: 'How KernelCMS gives AI agents and human editors one access-controlled content model, with the same permissions over both. The case for an agent-native headless CMS.' },
-    'lean-by-default': { metaTitle: 'Why node:sqlite Is the Default Database | KernelCMS', metaDesc: 'How KernelCMS stays lean: a zero-native-dependency default database via Node\'s built-in node:sqlite, with Postgres, MySQL, and Mongo one line away. The lean-core rule.' },
-    'migrations-that-dont-scare': { metaTitle: 'Headless CMS Migrations That Don\'t Scare You | KernelCMS', metaDesc: 'Diff-based, additive, deterministic schema migrations in KernelCMS. Preview every change before it runs and never lose data by surprise. How code-first migrations work.' },
+    'kernelcms-vs-directus': { metaTitle: 'KernelCMS vs Directus: Config-First vs Database-First', metaDesc: 'KernelCMS vs Directus, compared: config-first and MIT vs database-first and BSL. Which headless CMS fits a new code-owned model vs an existing SQL database.' },
+    'agent-native-cms': { metaTitle: 'The Content Layer Agents and Humans Share | KernelCMS', metaDesc: 'How KernelCMS gives AI agents and human editors one access-controlled content model with the same permissions. The case for an agent-native CMS.' },
+    'lean-by-default': { metaTitle: 'Why node:sqlite Is the Default Database | KernelCMS', metaDesc: 'How KernelCMS stays lean: a zero-dependency default database via Node\'s built-in node:sqlite, with Postgres, MySQL, and Mongo one line away.' },
+    'migrations-that-dont-scare': { metaTitle: 'Headless CMS Migrations That Don\'t Scare You | KernelCMS', metaDesc: 'Diff-based, additive, deterministic schema migrations in KernelCMS. Preview every change before it runs and never lose data by surprise.' },
     // Docs
-    'introduction': { metaTitle: 'Introduction to KernelCMS | TypeScript Headless CMS', metaDesc: 'Introduction to KernelCMS, the open-source, config-as-code TypeScript headless CMS: the one-pipeline mental model, the lean-core rule, and what you get from one config.' },
-    'installation': { metaTitle: 'Install KernelCMS | TypeScript Headless CMS Setup', metaDesc: 'Install KernelCMS: requirements (Node 22+), the create-kernel scaffolder, and what a config-as-code headless CMS project looks like on disk. Up and running in minutes.' },
-    'quickstart': { metaTitle: 'KernelCMS Quickstart: a Headless CMS in 3 Steps', metaDesc: 'Quickstart: install KernelCMS, write one kernel.config.ts, and run kernel dev to get a typed engine, REST + GraphQL APIs, a React admin, and a CLI in three steps.' },
-    'configuration': { metaTitle: 'KernelCMS Configuration & Environment Variables', metaDesc: 'Configure KernelCMS: how kernel.config.ts loads with TypeScript type-stripping, the rules it imposes, and every environment variable for a production deployment.' },
-    'collections': { metaTitle: 'Collections & Globals | KernelCMS Content Modeling', metaDesc: 'Model content in KernelCMS with collections and singleton globals, defined as typed code. Every option, admin presentation, and how globals differ from collections.' },
+    'introduction': { metaTitle: 'Introduction to KernelCMS | TypeScript Headless CMS', metaDesc: 'Introduction to KernelCMS, the open-source, config-as-code TypeScript headless CMS: the one-pipeline mental model and what you get from one config.' },
+    'installation': { metaTitle: 'Install KernelCMS | TypeScript Headless CMS Setup', metaDesc: 'Install KernelCMS: requirements (Node 22+), the create-kernel scaffolder, and what a config-as-code headless CMS project looks like on disk.' },
+    'quickstart': { metaTitle: 'KernelCMS Quickstart: a Headless CMS in 3 Steps', metaDesc: 'Quickstart: install KernelCMS, write one kernel.config.ts, and run kernel dev to get a typed engine, REST + GraphQL, a React admin, and a CLI in three steps.' },
+    'configuration': { metaTitle: 'KernelCMS Configuration & Environment Variables', metaDesc: 'Configure KernelCMS: how kernel.config.ts loads with TypeScript type-stripping, the rules it imposes, and every production environment variable.' },
+    'collections': { metaTitle: 'Collections & Globals | KernelCMS Content Modeling', metaDesc: 'Model content in KernelCMS with collections and singleton globals, defined as typed code, and how globals differ from collections.' },
     'fields': { metaTitle: 'Field Types Reference | KernelCMS Headless CMS', metaDesc: 'Every KernelCMS field type and option: text, number, relationship, upload, array, blocks, rich text, and more, with the shared options every field supports.' },
     'relationships': { metaTitle: 'Relationships & Joins | KernelCMS Content Model', metaDesc: 'Single, many, and polymorphic relationships in KernelCMS, plus virtual reverse-relationship join fields, population depth, and access-checked related data.' },
     'computed-fields': { metaTitle: 'Computed Fields | KernelCMS Derived Values', metaDesc: 'Computed fields in KernelCMS: virtual (derived on read) vs stored (derived on write and sortable). Keep business logic in one place, read-only in the admin.' },
     'localization': { metaTitle: 'Localization | KernelCMS Multi-Language Content', metaDesc: 'Per-field localization in KernelCMS: configure locales, mark fields localized, and read or write a locale with fallbacks. Build multi-language content models.' },
-    'access-control': { metaTitle: 'Access Control | KernelCMS Headless CMS Security', metaDesc: 'Deny-by-default access control in KernelCMS: boolean or row-level filter rules at the collection and field level, overrideAccess, and the privilege-escalation guard.' },
+    'access-control': { metaTitle: 'Access Control | KernelCMS Headless CMS Security', metaDesc: 'Deny-by-default access control in KernelCMS: boolean or row-level rules at the collection and field level, plus the privilege-escalation guard.' },
     'authentication': { metaTitle: 'Authentication | KernelCMS Headless CMS Auth', metaDesc: 'Auth in KernelCMS: email/password auth collections, sessions, API keys, password reset, email verification, TOTP two-factor, and OAuth with Google and GitHub.' },
     'local-api': { metaTitle: 'The Local API | KernelCMS Typed In-Process API', metaDesc: 'The KernelCMS Local API: the same create, read, update, and delete operations as REST and GraphQL, in-process and fully typed, with no HTTP round-trip.' },
     'rest-api': { metaTitle: 'REST API | KernelCMS Auto-Generated Endpoints', metaDesc: 'The auto-generated KernelCMS REST API: endpoints for every collection and global with filtering, sorting, pagination, relationship depth, and bulk operations.' },
@@ -1865,8 +1865,8 @@ npx kernel migrate          # apply the additive plan`)}
     'modules': { metaTitle: 'Modules | Bundle Features in KernelCMS', metaDesc: 'Bundle a collection, endpoints, globals, and jobs into one installable, conflict-checked KernelCMS module with defineModule. Build and ship features as a unit.' },
     'plugins': { metaTitle: 'Plugins | Extend KernelCMS Config', metaDesc: 'KernelCMS plugins: config transformers applied in dependency order. Add fields to existing collections, compose features, and use the built-in SEO plugin.' },
     'background-jobs': { metaTitle: 'Background Jobs | KernelCMS Task Queue', metaDesc: 'Define background job handlers in KernelCMS, enqueue work, and drain due jobs from a cron with kernel jobs:run. Retries, scheduling, and a focused Local API.' },
-    'admin-customization': { metaTitle: 'Customize the Admin | KernelCMS React Panel', metaDesc: 'Customize the KernelCMS admin: register custom field components, list cells, and dashboard widgets via window.KernelCMS, plus conditional fields and editor tabs.' },
-    'uploads-and-storage': { metaTitle: 'Uploads & Storage | KernelCMS Media', metaDesc: 'Upload collections, storage adapters (local disk, S3, R2), image variants, and focal points in KernelCMS. Add media with sharp-powered resizing to your headless CMS.' },
+    'admin-customization': { metaTitle: 'Customize the Admin | KernelCMS React Panel', metaDesc: 'Customize the KernelCMS admin: register custom field components, list cells, and dashboard widgets, plus conditional fields and editor tabs.' },
+    'uploads-and-storage': { metaTitle: 'Uploads & Storage | KernelCMS Media', metaDesc: 'Upload collections, storage adapters (local disk, S3, R2), image variants, and focal points in KernelCMS, with sharp-powered image resizing.' },
     'versions-and-drafts': { metaTitle: 'Versions & Drafts | KernelCMS Publishing', metaDesc: 'Version history, a draft and publish lifecycle, scheduled publishing, and autosave in KernelCMS. Restore previous versions and control what readers see.' },
     'caching-and-search': { metaTitle: 'Caching & Search | KernelCMS Performance', metaDesc: 'Read-through caching (memory, database, Redis) and access-checked full-text search in KernelCMS. Opt collections in, serve reads fast, and invalidate on write.' },
     'webhooks': { metaTitle: 'Webhooks | KernelCMS Event Notifications', metaDesc: 'Fire signed HTTP POST webhooks on content change in KernelCMS. Configure URL, secret, collections, and events, and verify the HMAC-SHA256 signature.' },
@@ -1874,7 +1874,7 @@ npx kernel migrate          # apply the additive plan`)}
     'cli': { metaTitle: 'CLI Reference | KernelCMS Commands', metaDesc: 'The KernelCMS CLI: init, dev, start, migrate, seed, generate:types, generate:module, jobs:run, doctor, and more, with the flags they share.' },
     'deployment': { metaTitle: 'Deploy KernelCMS | Single Container & Next.js', metaDesc: 'Deploy KernelCMS as one container anywhere, set production environment variables, and embed the whole CMS inside Next.js with a single catch-all route handler.' },
     // Guides
-    'add-a-backend-to-any-site': { metaTitle: 'Add a Backend to Any Website or AI-Generated Site', metaDesc: 'Add a backend, CMS, database, and editable content to any website, including AI-generated sites from v0, Lovable, Bolt, or Cursor. Step-by-step, with a ready-made AI prompt.' },
+    'add-a-backend-to-any-site': { metaTitle: 'Add a Backend to Any Website or AI-Generated Site', metaDesc: 'Add a backend, CMS, and database to any website, including AI-generated sites from v0, Lovable, Bolt, or Cursor. Step-by-step, with a ready-made AI prompt.' },
     'embed-nextjs': { metaTitle: 'Embed KernelCMS in Next.js | Headless CMS Guide', metaDesc: 'Mount the full KernelCMS headless CMS (REST, GraphQL, admin) inside a Next.js app behind one catch-all route, with a kernel singleton on the Node.js runtime.' },
     'uploads-images': { metaTitle: 'Uploads & Image Variants | KernelCMS Guide', metaDesc: 'Add S3 or R2 storage to KernelCMS and auto-generate resized image variants with focal points using the sharp image processor. A practical media how-to.' },
     'auth-2fa': { metaTitle: 'Password Reset & 2FA | KernelCMS Auth Guide', metaDesc: 'Enable email password reset and TOTP two-factor in KernelCMS with one config flag each. Scrypt hashing, no user-enumeration, built on node:crypto.' },

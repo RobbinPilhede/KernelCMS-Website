@@ -22,7 +22,7 @@ const PRACTICES: [string, string, string][] = [
 function Safety() {
   useHead(
     'Safety & security - KernelCMS',
-    'How KernelCMS keeps your content safe: deny-by-default access, row- and field-level control, hardened auth, no injection, and the same access model for humans and AI agents.',
+    'How KernelCMS keeps content safe: deny-by-default access, row- and field-level control, hardened auth, and one access model for humans and AI agents.',
     { keywords: ['CMS security', 'headless CMS access control', 'deny by default', 'field-level permissions', 'responsible disclosure'] },
   )
   return (
@@ -43,7 +43,7 @@ function Safety() {
           {PRACTICES.map(([icon, title, desc]) => (
             <div key={title} className="bg-[var(--surface)] p-[28px] flex flex-col gap-3 transition-colors hover:bg-[var(--surface-2)]">
               <div className="grid place-items-center w-11 h-11 rounded-xl bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] [&>svg]:w-[21px] [&>svg]:h-[21px]"><Icon name={icon} /></div>
-              <h3 className="text-[17px] font-semibold">{title}</h3>
+              <h2 className="text-[17px] font-semibold">{title}</h2>
               <p className="text-[var(--muted)] text-[14.5px] leading-[1.55] text-pretty m-0">{desc}</p>
             </div>
           ))}

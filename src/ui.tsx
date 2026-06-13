@@ -100,7 +100,7 @@ export function Footer() {
   const fcol = 'block text-[var(--muted)] text-sm py-[5px] transition-colors hover:text-[var(--text)]'
   const col = (h: string, links: [string, any][]) => (
     <div key={h}>
-      <h4 className="text-xs uppercase tracking-[0.1em] text-[var(--muted)] mb-4">{h}</h4>
+      <h2 className="text-xs uppercase tracking-[0.1em] text-[var(--muted)] mb-4">{h}</h2>
       {links.map(([label, to]) =>
         typeof to === 'string' && to.startsWith('http')
           ? <a key={label} href={to} className={fcol}>{label}</a>
@@ -297,8 +297,12 @@ type HeadOpts = {
 const abs = (u: string) => (u.startsWith('http') ? u : SITE_URL + (u.startsWith('/') ? u : '/' + u))
 const canonOf = (path: string) => SITE_URL + (path === '/' ? '/' : path.replace(/\/+$/, ''))
 
+const CRUMB_FIX: Record<string, string> = {
+  kernelcms: 'KernelCMS', vs: 'vs', api: 'API', cli: 'CLI', rest: 'REST', graphql: 'GraphQL',
+  '2fa': '2FA', nextjs: 'Next.js', faq: 'FAQ', seo: 'SEO', totp: 'TOTP', sqlite: 'SQLite', ai: 'AI',
+}
 function titleCaseSegment(seg: string) {
-  return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return seg.split('-').map((w) => CRUMB_FIX[w] || w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 function autoBreadcrumb(path: string): { name: string; path: string }[] {
   const crumbs = [{ name: 'Home', path: '/' }]

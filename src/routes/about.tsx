@@ -24,7 +24,7 @@ function Principle({ n, title, children }: any) {
 function About() {
   useHead(
     'About KernelCMS - content infrastructure you own',
-    'Our belief: every site and app should be able to get a real backend in minutes, owned by you, with no framework lock-in and no SaaS rent. This is how content infrastructure should work.',
+    'Our belief: every site should get a real backend in minutes, owned by you, with no framework lock-in and no SaaS rent. How content infrastructure should work.',
     { keywords: ['about KernelCMS', 'headless CMS philosophy', 'own your content', 'no vendor lock-in'] },
   )
   return (
