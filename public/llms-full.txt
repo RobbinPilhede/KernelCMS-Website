@@ -1,0 +1,2448 @@
+# KernelCMS - full documentation & comparisons
+
+> KernelCMS is an open-source (MIT), TypeScript-native, config-as-code headless CMS. You model content in a single kernel.config.ts and get a typed engine, auto-generated REST + GraphQL APIs, a typed in-process Local API, a React admin panel, and a CLI. Database, storage, auth, email, cache, and search are swappable adapters. It runs on web standards (Request → Response) with no framework lock-in, self-hosted on a single container. Developers own the model in code; editors change content in a no-code admin with live preview and a page builder.
+
+Source: https://kernelcms.com  ·  License: MIT  ·  Language: TypeScript
+
+---
+
+## Documentation
+
+### Introduction to KernelCMS
+KernelCMS is a config-as-code, end-to-end TypeScript headless CMS that never hijacks your framework.
+
+You describe your content in a single `kernel.config.ts`. From that one file KernelCMS gives you a typed content engine, a REST and GraphQL API, a fully typed in-process Local API, a polished React admin panel, and a CLI. You pick your own database, storage, email, image processor, cache, search, and auth providers through small adapter contracts, and you run the whole thing self-hosted on a single container.
+
+## The mental model
+
+There is exactly one pipeline. Every operation - whether it arrives over REST, over GraphQL, through the typed client, or from your own server code via the Local API - runs through the same stages:
+
+```
+defaults → access → hooks → validation → serialize → adapter → populate
+```
+
+That is the whole architecture. Because there is only one path, a rule you write once (an access check, a hook, a computed field) holds no matter how the data is touched. There is no second code path to keep in sync.
+
+## The lean-core rule
+
+The guiding rule of the codebase: **heavy or opinionated dependencies live behind optional adapters, never in `@kernel/core`**. The default database is SQLite via Node's built-in `node:sqlite` - zero native dependencies, nothing to compile. Image processing, Redis, S3, OAuth: all opt-in packages you add only when you need them.
+
+> One config, full inference. defineConfig(...) is an identity helper - it adds nothing at runtime but gives you complete type inference across collections, fields, hooks, and the typed client.
+
+## Where to go next
+
+- Installation - requirements, scaffolding, and project layout.
+
+- Quickstart - a working CMS in three steps.
+
+- Fields - the full field reference, the part you will read most.
+
+- Custom endpoints - when CRUD is not enough.
+
+---
+
+### Installation
+Requirements, the scaffolder, and what a KernelCMS project looks like on disk.
+
+## Requirements
+
+- **Node 22.18+ or 24.** KernelCMS runs your TypeScript config directly with no build step. On Node 23.6+ TypeScript types are stripped automatically; on 22.6–23.5 the CLI passes `--experimental-strip-types` for you.
+
+- Any package manager - npm, pnpm, or yarn. The CLI detects which one you used.
+
+## Scaffold a new project
+
+The fastest path is the scaffolder, which writes a ready-to-run config and installs dependencies:
+
+```
+npm create kernel my-app
+# or: pnpm create kernel my-app
+```
+
+## Add to an existing project
+
+```
+npm install kernelcms
+```
+
+Then create a `kernel.config.ts` (see Quickstart) or generate one:
+
+```
+npx kernel init
+```
+
+## Project layout
+
+A typical project is small - the engine lives in `node_modules`, your content model is the code you own:
+
+```
+my-app/
+├─ kernel.config.ts # your content model + adapters
+├─ .env # KERNEL_SECRET, DATABASE_URL, …
+├─ content.db # the default SQLite database (gitignored)
+└─ kernel/
+ └─ schema-snapshot.json # migration baseline (commit this)
+```
+
+> A project .env is loaded automatically by the CLI before your config is imported, so process.env is populated when kernel.config.ts runs.
+
+---
+
+### Quickstart
+A working CMS, an admin panel, and a typed REST + GraphQL API in three steps.
+
+## 1. Install
+
+```
+npm install kernelcms
+```
+
+## 2. Add a kernel.config.ts
+
+```
+import { defineConfig } from 'kernelcms'
+import { sqliteAdapter } from 'kernelcms/sqlite'
+
+export default defineConfig({
+ // Set KERNEL_SECRET in production; anything works locally.
+ secret: process.env.KERNEL_SECRET ?? 'dev-only-secret',
+ db: sqliteAdapter({ url: 'file:./content.db' }),
+ collections: [
+ {
+ slug: 'users',
+ auth: true, // email + password sign-in, included
+ fields: [{ name: 'name', type: 'text' }],
+ },
+ {
+ slug: 'posts',
+ access: { read: () => true }, // public reads
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+ { name: 'author', type: 'relationship', relationTo: 'users' },
+ ],
+ },
+ ],
+})
+```
+
+## 3. Run it
+
+```
+npx kernel dev
+```
+
+That creates the database tables, starts the server, and gives you:
+
+- **Admin panel** - `http://localhost:3000/admin` (the first visit asks you to create your admin account).
+
+- **REST API** - `http://localhost:3000/api/posts`
+
+- **GraphQL** - `http://localhost:3000/api/graphql`
+
+- **API reference** - `http://localhost:3000/api/docs` (OpenAPI at `/api/openapi`)
+
+## Try the API
+
+```
+curl http://localhost:3000/api/health
+curl "http://localhost:3000/api/posts?where[title][like]=hello&depth=1"
+```
+
+> Edit kernel.config.ts, refresh, and both the admin and the APIs update with it. In dev the schema auto-migrates additively on boot.
+
+---
+
+### Configuration & env
+How the config file is loaded, the rules type-stripping imposes, and every environment variable.
+
+## Config files are .ts, loaded with type stripping
+
+Node imports `kernel.config.ts` directly and *erases* the type syntax rather than compiling it. That means the config must use only **erasable** TypeScript:
+
+- No `enum` - use `as const` objects or union types.
+
+- No `namespace`/`module` with runtime members.
+
+- No constructor parameter properties (`constructor(private x: T)`).
+
+- Use `import type { … }` for type-only imports.
+
+Export the config as the **default export** (or a named `config` export); the CLI looks for `default` first, then `config`.
+
+## Importing the config from a TS app
+
+Node requires **.ts extensions on relative imports** inside the config graph. TypeScript under `moduleResolution: "bundler"` (Next.js's default) rejects those unless you allow them:
+
+```
+{ "compilerOptions": { "allowImportingTsExtensions": true, "noEmit": true } }
+```
+
+## Environment variables
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| KERNEL_SECRET | token signing | Long random value in prod; doctor errors if unset. |
+| DATABASE_URL | Postgres adapter | Scaffolded configs use Postgres when set, else local SQLite. |
+| KERNEL_API_KEY | start | Authorization: Bearer runs as a trusted system caller. |
+| KERNEL_CORS | start | Comma-separated origin allow-list. |
+| KERNEL_OPENAPI | start | true re-enables OpenAPI + docs (off in prod by default). |
+| KERNEL_GRAPHQL | start | true re-enables GraphQL (off in prod by default). |
+| KERNEL_LOG_LEVEL | logger | debug | info | warn | error. |
+| PORT | dev / start | Default 3000; override with --port. |
+| NODE_ENV | doctor | production escalates several warnings to errors. |
+
+> OpenAPI and GraphQL are off by default in production - they map every collection and field, an unbounded attack surface for most apps. Re-enable explicitly with KERNEL_OPENAPI=true / KERNEL_GRAPHQL=true if you need them.
+
+---
+
+### Collections & globals
+Collections are typed document types; globals are singletons. Both are defined as code.
+
+## The collection config
+
+Every option on a collection, with the defaults that apply when you omit it:
+
+```
+{
+ slug: 'posts', // required - URL + table name
+ labels: { singular: 'Post', plural: 'Posts' },
+ timestamps: true, // adds created_at / updated_at (default true)
+ fields: [/* … */], // required
+ access: { read: () => true }, // deny-by-default if omitted
+ hooks: { /* beforeChange, afterChange, … */ },
+ admin: {
+ useAsTitle: 'title', // which field labels a row
+ defaultColumns: ['title', 'author', 'updatedAt'],
+ defaultSort: '-createdAt', // newest first; '-' = desc
+ group: 'Content', // sidebar grouping
+ description: 'Blog posts',
+ hidden: false, // hide from the admin nav
+ livePreview: { url: 'https://site.com/preview' },
+ },
+}
+```
+
+## Admin presentation
+
+`admin.useAsTitle` picks the field shown as a document's title in lists and relationship pickers. `admin.defaultColumns` sets the initial list columns. `admin.group` buckets collections under a sidebar heading. See Querying for how `defaultSort` interacts with explicit sorts.
+
+## Globals (singletons)
+
+A global is a single document - site settings, a header, a footer. Same field system, no list view:
+
+```
+globals: [
+ {
+ slug: 'settings',
+ label: 'Site settings',
+ access: { read: () => true, update: ({ req }) => Boolean(req.user) },
+ fields: [
+ { name: 'siteName', type: 'text', required: true },
+ { name: 'social', type: 'group', fields: [
+ { name: 'twitter', type: 'text' },
+ { name: 'github', type: 'text' },
+ ] },
+ ],
+ },
+]
+```
+
+Read and write globals through the Local API with `findGlobal` / `updateGlobal`, or over REST at `/api/globals/settings`.
+
+> Globals support beforeChange, afterChange, and afterRead hooks - the same shapes as collections, minus the delete hooks.
+
+---
+
+### Field reference
+Every field type and every option. This is the page you will return to most.
+
+## Options every field shares
+
+These come from `FieldBase` and apply to any storage-bearing field:
+
+```
+{
+ name: 'title', // required, becomes the column name
+ label: 'Title', // admin label (defaults from name)
+ required: true,
+ unique: true, // enforced with a unique index
+ localized: true, // per-locale values (needs config.localization)
+ index: true, // add a database index
+ defaultValue: 'Draft', // value | () => value
+ admin: {
+ description: 'Shown under the input',
+ placeholder: 'e.g. Hello world',
+ readOnly: false,
+ hidden: false,
+ position: 'sidebar', // 'main' | 'sidebar'
+ tab: 'Content', // group under an editor tab
+ section: 'Meta', // sub-section within a tab
+ width: 50, // % width on a row
+ condition: (data) => data.type === 'link', // show conditionally
+ component: 'ColorPicker', // custom admin component key
+ },
+ access: { read, create, update }, // field-level access (see Access control)
+ validate: ({ value }) => value.length < 80 || 'Too long',
+}
+```
+
+## Text family
+
+`type` can be `text`, `textarea`, `email`, `code`, or `slug`. They share `minLength`, `maxLength`, and `pattern`:
+
+```
+{ name: 'title', type: 'text', required: true, maxLength: 120 },
+{ name: 'summary', type: 'textarea' },
+{ name: 'contact', type: 'email' },
+{ name: 'snippet', type: 'code' },
+{ name: 'slug', type: 'slug', unique: true }, // auto-kebab-cases as you type
+```
+
+## Number, boolean, date
+
+```
+{ name: 'price', type: 'number', min: 0, integer: false },
+{ name: 'featured', type: 'boolean' },
+{ name: 'agree', type: 'checkbox' }, // boolean rendered as a checkbox
+{ name: 'publishedAt', type: 'date' }
+```
+
+## Select & radio
+
+```
+{
+ name: 'status', type: 'select',
+ options: [
+ 'draft', // shorthand
+ { label: 'In review', value: 'review' },// explicit label/value
+ { label: 'Published', value: 'published' },
+ ],
+ hasMany: false, // true → stores an array of values
+}
+```
+
+## json & point
+
+```
+{ name: 'metadata', type: 'json' },
+{ name: 'location', type: 'point' } // { lat, lng }
+```
+
+## Rich text
+
+A structured rich-text field. Control the toolbar with a `preset` (`minimal`, `standard`, `full`) or an explicit ordered `features` allow-list:
+
+```
+{ name: 'body', type: 'richText', preset: 'full' },
+{ name: 'bio', type: 'richText',
+ features: ['bold', 'italic', 'link', 'heading', 'list'] }
+```
+
+## group, array, blocks
+
+**group** nests named fields under one object. **array** is a repeatable list of the same shape. **blocks** is the page builder - a repeatable list of typed variants:
+
+```
+{ name: 'seo', type: 'group', fields: [
+ { name: 'title', type: 'text' },
+ { name: 'description', type: 'textarea' },
+] },
+
+{ name: 'gallery', type: 'array', minRows: 1, maxRows: 12, fields: [
+ { name: 'image', type: 'upload', relationTo: 'media' },
+ { name: 'caption', type: 'text' },
+] },
+
+{ name: 'layout', type: 'blocks', blocks: [
+ { slug: 'hero',
+ labels: { singular: 'Hero' },
+ admin: { group: 'Sections', description: 'Big banner' },
+ fields: [{ name: 'heading', type: 'text' }] },
+ { slug: 'cta',
+ fields: [{ name: 'label', type: 'text' }, { name: 'href', type: 'text' }] },
+] }
+```
+
+Blocks are stored as a JSON array of `{ blockType, ...fields }`. Each block can declare an admin `group`, `description`, and `thumbnail` for its card in the section library.
+
+## Presentational containers: row, tabs, ui
+
+These organise the editor without storing anything - their children persist at the parent level:
+
+```
+{ type: 'row', fields: [
+ { name: 'firstName', type: 'text', admin: { width: 50 } },
+ { name: 'lastName', type: 'text', admin: { width: 50 } },
+] },
+{ type: 'tabs', tabs: [
+ { label: 'Content', fields: [/* … */] },
+ { label: 'SEO', description: 'Search metadata', fields: [/* … */] },
+] },
+{ type: 'ui', name: 'previewButton' } // renders a custom admin component, stores nothing
+```
+
+Relationship, upload, computed, and join fields each have their own page - see Relationships & joins and Computed fields.
+
+---
+
+### Relationships & joins
+Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.
+
+## A simple relationship
+
+```
+{ name: 'author', type: 'relationship', relationTo: 'users' }
+```
+
+Stored as the related document's id. Set `hasMany: true` to store an array of ids.
+
+## Polymorphic relationships
+
+Point a field at more than one collection. Polymorphic values are stored and returned as `{ relationTo, value }` so the target is always explicit:
+
+```
+{ name: 'related', type: 'relationship',
+ relationTo: ['posts', 'pages'], hasMany: true }
+```
+
+```
+{ "related": [
+ { "relationTo": "posts", "value": "p_01" },
+ { "relationTo": "pages", "value": "pg_07" }
+] }
+```
+
+## Population & depth
+
+Relationships return ids by default. Ask the server to expand them with `depth` - each level decrements, so nested relationships keep expanding while depth remains:
+
+```
+GET /api/posts?depth=2
+
+{
+ "docs": [
+ { "id": "p_01", "title": "Hello",
+ "author": { "id": "u_1", "name": "Ada" } }
+ ]
+}
+```
+
+At `depth: 0` you get raw ids. From the Local API, pass `{ depth: 1 }` on the operation options.
+
+## Join fields (reverse relationships)
+
+A `join` field is a **virtual reverse relationship** - nothing is stored. It is resolved at read time by querying the related collection for documents that point back:
+
+```
+// on 'authors': list the author's posts (posts.author → this author)
+{ type: 'join', name: 'posts', collection: 'posts', on: 'author', limit: 100 }
+```
+
+- **When:** populated only when request `depth > 0`. At `depth: 0` the field is absent.
+
+- **Order:** follows the related collection's `admin.defaultSort` - set it to make join order deterministic.
+
+- **Limit:** at most `limit` rows (default 100).
+
+- **Access:** related rows go through the normal access-checked read path; rows the caller can't read are simply omitted, never an error.
+
+> Joins compose: at depth: 2 an author's joined posts can themselves populate their relationships, all access-checked the whole way down.
+
+---
+
+### Computed fields
+Derive a value in one place - virtual (on read) or stored (on write).
+
+A field with a `compute` function derives its own value instead of taking it from input. It comes in two flavours, and the difference is entirely about *when* the value is produced and whether it is persisted.
+
+## Virtual: derived on read
+
+`virtual: true` means the value is computed on every read from the resolved document. It lives only in memory, so it is **never stored** and **cannot be sorted or filtered**:
+
+```
+{
+ name: 'word_count', type: 'number', virtual: true,
+ compute: ({ doc }) => String(doc.body ?? '').split(/\s+/).length,
+}
+```
+
+## Stored: derived on write
+
+Drop `virtual` and the same `compute` runs at **write** time, persisting to a real column - so the value **is** sortable and filterable. The computed value always overrides client input:
+
+```
+{
+ name: 'sort_key', type: 'number', index: true,
+ compute: ({ doc }) => new Date(doc.starts_at).getTime(),
+}
+```
+
+## Which one?
+
+| | virtual | stored |
+| --- | --- | --- |
+| Runs | every read | every write |
+| Persisted | no | yes (real column) |
+| Sort / filter | no | yes |
+| Use when | cheap, presentational | you must order/filter by it |
+
+> Both render read-only in the admin, and compute runs after field-read access - a computed value can never leak a field the caller isn't allowed to read.
+
+---
+
+### Localization
+Per-field translations with a configurable locale set and fallbacks.
+
+## Enable locales
+
+```
+export default defineConfig({
+ localization: {
+ locales: ['en', 'sv', 'de'],
+ defaultLocale: 'en',
+ fallback: true, // fall back to defaultLocale when a value is missing
+ },
+ // …
+})
+```
+
+## Mark fields localized
+
+```
+{ name: 'title', type: 'text', localized: true },
+{ name: 'body', type: 'richText', localized: true }
+```
+
+A localized field stores one value per locale. Non-localized fields are shared across all locales.
+
+## Reading & writing a locale
+
+Over REST, pass `?locale=sv`. From the Local API, set it on the request context:
+
+```
+await kernel.find({
+ collection: 'posts',
+ req: { locale: 'sv', fallbackLocale: 'en' },
+})
+```
+
+> fallbackLocale can be a locale string or false to disable fallback for a single call and see exactly which values are missing.
+
+---
+
+### Access control
+Deny-by-default authorization at the collection and field level - booleans or row filters.
+
+## Deny by default
+
+A collection with no `access` rules denies everything (the admin and `doctor` flag this as `no-access`). Declare what is allowed explicitly:
+
+```
+access: { read: () => true } // public reads
+access: { read: ({ req }) => Boolean(req.user) } // authenticated reads
+```
+
+## The access function
+
+Every rule receives `{ req, id?, data? }` and returns a boolean, a `Where` filter, or a promise of either:
+
+```
+type AccessFn = (args: {
+ req: RequestContext // { user, locale, fallbackLocale, context }
+ id?: string // present for update / delete / read-by-id
+ data?: Row // present for create / update
+}) => boolean | Where | Promise
+```
+
+## Row-level filters
+
+Return a `Where` instead of a boolean to scope a query to the rows a caller may see. The filter is merged into every read, update, and delete:
+
+```
+access: {
+ // users only ever see and edit their own posts
+ read: ({ req }) => ({ author: { equals: req.user?.id } }),
+ update: ({ req }) => ({ author: { equals: req.user?.id } }),
+ delete: ({ req }) => req.user?.roles?.includes('admin') ?? false,
+}
+```
+
+## Field-level access
+
+Fields take their own `access` with `read`, `create`, and `update`. A field with no rule inherits the collection decision:
+
+```
+{ name: 'internal_notes', type: 'textarea',
+ access: { read: ({ req }) => req.user?.roles?.includes('staff') ?? false } }
+```
+
+## overrideAccess
+
+Every Local API operation accepts `overrideAccess: true`, which **bypasses all access checks** and runs as a trusted system caller (it also lets you set server-managed auth fields). Use it in seeds, migrations, jobs, and trusted server code - never with untrusted input. Over HTTP, the equivalent is the API-key bearer token.
+
+> Privilege-escalation guard. On an auth collection, authority fields (roles, role, permissions, is_admin, is_staff, is_superuser) are admin-write by default - even a user who can update their own record cannot promote themselves. An explicit field-level access.update rule overrides the default; trusted paths using overrideAccess still set them.
+
+---
+
+### Authentication
+Auth collections, sessions, API keys, password reset, email verification, 2FA, and OAuth.
+
+## Turn a collection into an auth collection
+
+```
+{ slug: 'users', auth: true, fields: [{ name: 'name', type: 'text' }] }
+```
+
+This injects email + password handling (scrypt hashing) and login routes. Pass an options object to enable more:
+
+```
+{
+ slug: 'users',
+ auth: {
+ loginField: 'email', // identifier field (default 'email')
+ tokenExpiration: 7200, // seconds
+ useAPIKey: true, // per-document API keys for machine clients
+ forgotPassword: true, // email-based password reset
+ verify: true, // require email verification before login
+ twoFactor: true, // TOTP two-factor
+ },
+ fields: [{ name: 'name', type: 'text' }],
+}
+```
+
+## Logging in
+
+```
+const { user, token, exp } = await kernel.login({
+ collection: 'users',
+ email: 'admin@example.com',
+ password: 'secret',
+ code: '123456', // required only when the account has 2FA enabled
+})
+```
+
+Over HTTP, `POST /api/users/login` returns the same shape and (by default) sets an `HttpOnly` session cookie. `GET /api/users/me` resolves the current user.
+
+## API keys for machine clients
+
+```
+const { key } = await kernel.createAPIKey({ collection: 'users', id: user.id })
+// later, the holder authenticates as that user:
+const u = await kernel.authenticateAPIKey('users', key)
+```
+
+## Password reset & email verification
+
+```
+await kernel.forgotPassword({ collection: 'users', email })
+await kernel.resetPassword({ collection: 'users', token, password })
+await kernel.requestEmailVerification({ collection: 'users', email })
+await kernel.verifyEmail({ collection: 'users', token })
+```
+
+> Reset and verification flows do not reveal whether an email exists (no user-enumeration). Tokens are emailed through your configured email adapter - a console adapter is used in dev if none is set.
+
+## Two-factor (TOTP)
+
+```
+const { secret, otpauthURL } = await kernel.setupTwoFactor({ collection: 'users', id })
+// show otpauthURL as a QR code, then confirm a code to enable:
+await kernel.enableTwoFactor({ collection: 'users', id, code: '123456' })
+```
+
+## OAuth sign-in
+
+```
+import { googleOAuth, githubOAuth } from 'kernelcms'
+
+export default defineConfig({
+ oauth: [
+ googleOAuth({ clientId: process.env.GOOGLE_ID, clientSecret: process.env.GOOGLE_SECRET }),
+ githubOAuth({ clientId: process.env.GH_ID, clientSecret: process.env.GH_SECRET }),
+ ],
+ // …
+})
+```
+
+The built-in server exposes start + callback routes; complete sign-in with `kernel.loginWithOAuth(...)`.
+
+## Sessions & CSRF
+
+By default login sets the token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` over HTTPS), so an XSS cannot read it. `Authorization: Bearer ` still works for API clients. CSRF is covered by `SameSite=Lax` plus a same-origin `Origin` check on cookie-authed writes; Bearer callers are exempt.
+
+---
+
+### The Local API
+The same operations as REST, in-process, fully typed, with no HTTP round-trip.
+
+The `kernel` instance exposes every operation directly. This is the API you use inside hooks, jobs, custom endpoints, server functions, and seeds. It is the same engine REST and GraphQL call - same access rules, same hooks, same validation.
+
+## Reading
+
+```
+const { docs, totalDocs, page } = await kernel.find({
+ collection: 'posts',
+ where: { status: { equals: 'published' } },
+ sort: '-createdAt',
+ limit: 20,
+ page: 1,
+ depth: 1,
+})
+
+const post = await kernel.findByID({ collection: 'posts', id })
+const total = await kernel.count({ collection: 'posts', where: { featured: { equals: true } } })
+```
+
+## Writing
+
+```
+const created = await kernel.create({
+ collection: 'posts',
+ data: { title: 'Hello', body: '…', author: ada.id },
+})
+
+const updated = await kernel.update({ collection: 'posts', id, data: { title: 'Edited' } })
+const removed = await kernel.delete({ collection: 'posts', id })
+```
+
+## Bulk operations
+
+```
+const { docs, count } = await kernel.updateMany({
+ collection: 'posts',
+ where: { status: { equals: 'review' } },
+ data: { status: 'published' },
+ limit: 1000, // safety cap (default 1000)
+})
+
+await kernel.deleteMany({ collection: 'comments', where: { spam: { equals: true } } })
+```
+
+## Shared operation options
+
+Every operation accepts these on top of its own arguments:
+
+```
+{
+ req: { user, locale, fallbackLocale, context }, // request context
+ overrideAccess: true, // bypass access checks (trusted code only)
+ depth: 1, // relationship population depth
+ draft: true, // read latest content incl. drafts (drafts collections)
+}
+```
+
+> The Local API is generically typed: kernel.find({ … }) returns PaginatedResult. Run kernel generate:types to emit interfaces for your collections.
+
+---
+
+### REST API
+Auto-generated endpoints for every collection and global, access-checked end to end.
+
+## Endpoints
+
+```
+GET /api/posts # list (filter, sort, paginate)
+POST /api/posts # create
+GET /api/posts/:id # read one
+PATCH /api/posts/:id # update
+DELETE /api/posts/:id # delete
+GET /api/globals/settings # read a global
+POST /api/globals/settings # update a global
+```
+
+## List response shape
+
+```
+{
+ "docs": [{ "id": "p_01", "title": "Hello" }],
+ "totalDocs": 42,
+ "page": 1,
+ "totalPages": 3,
+ "limit": 20
+}
+```
+
+## Query parameters
+
+- `where[field][operator]=value` - filtering (see Querying).
+
+- `sort=-createdAt,title` - ordering; `-` for descending.
+
+- `limit` & `page` - pagination.
+
+- `depth` - how deep to populate relationships and joins.
+
+- `locale` & `fallback-locale` - localization.
+
+```
+curl "http://localhost:3000/api/posts?where[status][equals]=published&sort=-createdAt&depth=1&limit=10"
+```
+
+## Authenticating requests
+
+```
+Authorization: Bearer 
+```
+
+Cookie sessions are sent automatically by the browser; API clients use the Bearer header.
+
+## Error envelope
+
+Errors are localized and structured, rendered for the request's locale at the boundary:
+
+```
+{ "error": { "code": "VALIDATION", "message": "title is required" } }
+```
+
+---
+
+### Querying & the Where syntax
+The operator set, sorting, pagination, and how default sort is resolved.
+
+## Where operators
+
+A `Where` maps a field to one or more operators. The same object works in REST (`where[field][op]=…`) and the Local API:
+
+```
+where: {
+ status: { equals: 'published' },
+ title: { like: 'hello' }, // case-insensitive contains
+ views: { greater_than: 100 },
+ rating: { greater_than_equal: 4 },
+ stock: { less_than: 10 },
+ category: { in: ['news', 'guides'] },
+ archived: { not_equals: true },
+ deletedAt: { exists: false },
+}
+```
+
+Available operators: `equals`, `not_equals`, `like`, `in`, `not_in`, `greater_than`, `greater_than_equal`, `less_than`, `less_than_equal`, `exists`.
+
+## Combining with and / or
+
+```
+where: {
+ and: [
+ { status: { equals: 'published' } },
+ { or: [
+ { featured: { equals: true } },
+ { views: { greater_than: 1000 } },
+ ] },
+ ],
+}
+```
+
+Over REST: `?where[and][0][status][equals]=published&where[and][1][featured][equals]=true`.
+
+## Sorting & pagination
+
+```
+kernel.find({ collection: 'posts', sort: ['-featured', 'title'], limit: 20, page: 2 })
+```
+
+## How default sort is resolved
+
+Precedence: an explicit `sort` argument → the collection's `admin.defaultSort` → newest-first by `createdAt` (or `id` when timestamps are off).
+
+> Join-field order has no explicit sort, so it follows the related collection's admin.defaultSort. Set it there to make joined lists deterministic.
+
+---
+
+### GraphQL
+An auto-generated GraphQL endpoint over the same model and access rules.
+
+## Enabling it
+
+GraphQL is on in `dev` and available at `/api/graphql`. In production it is **off by default** - set `KERNEL_GRAPHQL=true` to re-enable it.
+
+## Querying
+
+```
+query {
+ Posts(where: { status: { equals: published } }, sort: "-createdAt", limit: 10) {
+ docs { id title author { name } }
+ totalDocs
+ }
+}
+```
+
+## Mutations
+
+```
+mutation {
+ createPost(data: { title: "Hello", body: "…" }) { id title }
+}
+```
+
+> Every query and mutation runs through the same access pipeline as REST and the Local API - GraphQL never exposes a document the caller couldn't read another way.
+
+---
+
+### Lifecycle hooks
+Run logic at well-defined points in the operation pipeline.
+
+## The hooks
+
+Collections support five hook arrays; each runs in order and can be async:
+
+```
+hooks: {
+ beforeChange: [({ data, operation, req }) => data], // mutate input pre-write
+ afterChange: [({ doc, operation, req }) => doc], // react after a write
+ afterRead: [({ doc, req }) => doc], // shape data on the way out
+ beforeDelete: [({ id, req }) => { /* guard / cascade */ }],
+ afterDelete: [({ id, doc, req }) => { /* cleanup */ }],
+}
+```
+
+## beforeChange - derive and normalize
+
+```
+beforeChange: [
+ ({ data, req }) => ({
+ ...data,
+ slug: data.slug ?? slugify(String(data.title)),
+ updatedBy: req.user?.id,
+ }),
+]
+```
+
+## afterChange - side effects
+
+```
+afterChange: [
+ async ({ doc, operation, req }) => {
+ if (operation === 'create') {
+ await req.context.notify?.(doc) // e.g. enqueue a job, ping a webhook
+ }
+ return doc
+ },
+]
+```
+
+## afterRead - outgoing shaping
+
+```
+afterRead: [({ doc }) => ({ ...doc, excerpt: String(doc.body).slice(0, 140) })]
+```
+
+> Hooks run inside the access-checked pipeline. Don't use them to leak fields - field-read access still applies after afterRead. For heavy work in afterChange, enqueue a background job rather than blocking the write.
+
+---
+
+### Custom endpoints
+Typed, validated, access-controlled HTTP handlers that extend the REST surface.
+
+When CRUD is not enough, add an endpoint with `defineEndpoint`. It flows through the same access, validation, and error pipeline as the generated routes, and shows up in the OpenAPI docs and the typed client.
+
+## A minimal endpoint
+
+```
+import { defineEndpoint } from 'kernelcms'
+
+export default defineConfig({
+ endpoints: [
+ defineEndpoint({
+ method: 'POST',
+ path: '/posts/:id/publish',
+ access: ({ req }) => Boolean(req.user), // secure by default
+ handler: async ({ input, ctx }) =>
+ ctx.local.update({ collection: 'posts', id: input.params.id, data: { _status: 'published' } }),
+ }),
+ ],
+ // …
+})
+```
+
+## The handler context
+
+Every handler receives `{ input, ctx }`. `ctx` is your toolbox:
+
+```
+handler: async ({ input, ctx }) => {
+ ctx.req // RequestContext: { user, locale, fallbackLocale, context }
+ ctx.user // the authenticated user (or null) - shorthand for ctx.req.user
+ ctx.local // the full typed Local API (kernel)
+ ctx.logger // request-scoped logger
+ ctx.request // the raw web-standard Request (headers, streaming, …)
+ // return JSON-serializable data (sent as 200) or a Response
+}
+```
+
+## Typed input validation
+
+Validate `params`, `query`, and `body` with any Zod-compatible schema - anything with a `parse(value)` method. No Zod dependency is forced on the core, yet Zod schemas drop straight in. A parse failure becomes a standard ValidationError:
+
+```
+import { z } from 'zod'
+
+defineEndpoint({
+ method: 'POST',
+ path: '/comments/:postId',
+ input: {
+ params: z.object({ postId: z.string() }),
+ body: z.object({ author: z.string().min(1), text: z.string().min(1).max(2000) }),
+ },
+ access: ({ req }) => Boolean(req.user),
+ summary: 'Add a comment',
+ tags: ['comments'],
+ handler: async ({ input, ctx }) => {
+ // input is fully typed: input.params.postId, input.body.text
+ return ctx.local.create({
+ collection: 'comments',
+ data: { post: input.params.postId, ...input.body, by: ctx.user?.id },
+ })
+ },
+})
+```
+
+> Endpoints are authenticated-only until you set access, share the same error envelope as core routes, and cannot shadow built-in auth or system routes.
+
+---
+
+### Modules
+Bundle a collection, endpoints, globals, and jobs into one installable, conflict-checked unit.
+
+A module is a vertical slice - collections + globals + endpoints + jobs that ship and install as one unit. It compiles to a plugin, so it joins the same dependency-ordered, conflict-checked fold. Any duplicate slug, path, or job is a **fatal conflict**, never a silent last-write.
+
+## Defining a module
+
+```
+import { defineModule, defineEndpoint } from 'kernelcms'
+
+export const comments = defineModule({
+ name: 'comments',
+ version: '1.0.0',
+ dependsOn: ['posts'], // optional: ordering by module name
+ collections: [
+ { slug: 'comments', access: { read: () => true }, fields: [
+ { name: 'post', type: 'relationship', relationTo: 'posts' },
+ { name: 'text', type: 'textarea', required: true },
+ { name: 'approved', type: 'boolean', defaultValue: false },
+ ] },
+ ],
+ endpoints: [
+ defineEndpoint({ method: 'POST', path: '/comments/:postId',
+ access: ({ req }) => Boolean(req.user),
+ handler: async ({ input, ctx }) =>
+ ctx.local.create({ collection: 'comments', data: { post: input.params.postId } }) }),
+ ],
+ jobs: [
+ { slug: 'moderate-comments', handler: async ({ local }) => {
+ await local.updateMany({ collection: 'comments',
+ where: { approved: { equals: false } }, data: { approved: true } })
+ } },
+ ],
+})
+```
+
+## Installing it
+
+```
+export default defineConfig({
+ plugins: [comments],
+ // …
+})
+```
+
+## Scaffold one
+
+```
+npx kernel generate:module comments
+```
+
+> Because modules are conflict-checked, two modules that both try to define a comments collection fail loudly at boot - you find the clash immediately, not in production.
+
+---
+
+### Plugins
+Config transformers applied in dependency order - the lowest-level extension point.
+
+A plugin is a function that receives the config-so-far and returns the next config. Modules compile to plugins; reach for a raw plugin when you want to transform *existing* collections rather than only add new ones (the SEO plugin is the canonical example).
+
+## definePlugin
+
+```
+import { definePlugin } from 'kernelcms'
+
+export const audit = definePlugin((options) => ({
+ name: 'audit-fields',
+ version: '1.0.0',
+ setup: ({ config, extend, log }) => {
+ log.info('adding audit fields')
+ // extend is the only sanctioned mutation path - it is conflict-checked
+ return extend.addFieldsToCollections(options.collections, [
+ { name: 'updatedBy', type: 'relationship', relationTo: 'users',
+ admin: { readOnly: true, position: 'sidebar' } },
+ ])
+ },
+}))
+```
+
+## Ordering & dependencies
+
+List `dependsOn: ['other-plugin']` and KernelCMS resolves a topological order before running any `setup`. Cycles and missing dependencies are fatal errors, surfaced at boot.
+
+## A built-in example: SEO
+
+```
+import { seoPlugin } from 'kernelcms/plugin-seo'
+
+plugins: [
+ seoPlugin({ collections: ['posts'], generateTitleFrom: 'title' }),
+]
+```
+
+It appends `meta_title` and `meta_description` as **top-level** fields (grouped under an "SEO" tab but stored as their own columns, so you can query and sort on them), and won't double-add a field you already declared.
+
+---
+
+### Background jobs
+Define handlers, enqueue work, and drain due jobs from a cron.
+
+## Define a job
+
+Adding any `jobs` injects a reserved `kernel_jobs` collection that tracks attempts and run times:
+
+```
+export default defineConfig({
+ jobs: [
+ {
+ slug: 'send-digest',
+ maxAttempts: 3, // retries before marked failed (default 3)
+ handler: async ({ input, local, email, job }) => {
+ const { docs } = await local.find({ collection: 'posts',
+ where: { featured: { equals: true } }, limit: 5 })
+ await email?.send({ to: input.to, subject: 'Weekly digest', html: render(docs) })
+ },
+ },
+ ],
+ // …
+})
+```
+
+## Enqueue work
+
+```
+await kernel.enqueue({
+ task: 'send-digest',
+ input: { to: 'reader@example.com' },
+ runAt: Date.now() + 60_000, // eligible in 1 minute (default: now)
+ maxAttempts: 5,
+})
+```
+
+## Drain due jobs
+
+Run due jobs in-process, or from a cron with the CLI:
+
+```
+const { ran, failed } = await kernel.runDueJobs({ limit: 100 })
+```
+
+```
+# crontab: every minute
+* * * * * cd /app && npx kernel jobs:run
+```
+
+> The handler context exposes a focused Local API (find, create, update, updateMany, delete, globals, …) plus the email adapter - enough to do real work without re-importing the kernel.
+
+---
+
+### Customizing the admin
+Register custom field inputs, list cells, and dashboard widgets - without forking the panel.
+
+The admin is extensible through `window.KernelCMS` registries. You inject a small script via the server's `admin.scripts` option and register components by key.
+
+## Register components
+
+```
+// admin-extensions.js - loaded via admin: { scripts: ['/admin-extensions.js'] }
+window.KernelCMS.fields.register('ColorPicker', ColorPickerComponent)
+window.KernelCMS.cells.register('StatusBadge', StatusBadgeCell)
+window.KernelCMS.widgets.register(RecentActivityWidget)
+```
+
+## Use a custom field component
+
+Point a field at a registered component by key with `admin.component`:
+
+```
+{ name: 'brandColor', type: 'text', admin: { component: 'ColorPicker' } }
+```
+
+## UI-only fields
+
+A `ui` field renders a component and stores nothing - perfect for a custom button or inline help:
+
+```
+{ type: 'ui', name: 'syncButton', admin: { component: 'SyncButton' } }
+```
+
+## Presentation without code
+
+Much of the editor is configurable without custom components: `admin.position: 'sidebar'`, `admin.condition` for conditional fields, `admin.tab` / `admin.section` for grouping, `admin.width` on a `row`, and per-collection `admin.defaultColumns`.
+
+```
+{ name: 'externalUrl', type: 'text',
+ admin: { condition: (data) => data.type === 'link', width: 50 } }
+```
+
+---
+
+### Uploads & storage
+Upload collections, storage adapters, image variants, and focal points.
+
+## An upload collection
+
+```
+{
+ slug: 'media',
+ upload: {
+ mimeTypes: ['image/*', 'application/pdf'],
+ maxFileSize: 10 * 1024 * 1024, // 10 MB, enforced server-side
+ focalPoint: true, // editable crop anchor
+ imageSizes: [
+ { name: 'thumbnail', width: 400, height: 300, fit: 'cover', format: 'webp', quality: 80 },
+ { name: 'og', width: 1200, height: 630, fit: 'cover' },
+ ],
+ },
+ fields: [{ name: 'alt', type: 'text', required: true }],
+}
+```
+
+System fields (`filename`, `mime_type`, `filesize`, `checksum`, `url`, …) are injected automatically. Reference uploads from other collections with an `upload` field:
+
+```
+{ name: 'cover', type: 'upload', relationTo: 'media' }
+```
+
+## Storage adapters
+
+```
+import { localStorage, s3Storage, r2, memoryStorage } from 'kernelcms/storage'
+
+storage: localStorage({ rootDir: './.uploads', servePath: '/files' })
+// storage: s3Storage({ bucket, region, accessKeyId, secretAccessKey })
+// storage: r2({ bucket, accountId, accessKeyId, secretAccessKey })
+```
+
+> memoryStorage() is great for tests and previews but loses bytes on restart and isn't shared across nodes. doctor warns when an upload collection uses it, and errors in production. Use localStorage, S3, or R2 for real deployments.
+
+## Image variants
+
+Resized derivatives require an image processor. Install the optional sharp adapter and set it on the config - without it, originals are stored as-is (the lean default):
+
+```
+import { sharpImageProcessor } from '@kernel/image-sharp'
+
+export default defineConfig({
+ image: sharpImageProcessor(),
+ // imageSizes on upload collections now generate on upload
+})
+```
+
+---
+
+### Versions & drafts
+Version history, a draft/publish lifecycle, scheduled publishing, and autosave.
+
+## Enable versions
+
+```
+{ slug: 'posts', versions: true } // history only
+{ slug: 'posts', versions: { drafts: true, maxPerDoc: 100 } } // + draft/publish
+```
+
+Snapshots are stored in a separate `_versions_` table, capped at `maxPerDoc` (default 100, `0` = unlimited).
+
+## The draft lifecycle
+
+With `drafts: true`, new and edited documents are drafts by default and a `_status` column tracks `draft` / `published`. `find()` returns **published documents only** unless you pass `draft: true` (the admin always requests drafts):
+
+```
+await kernel.publish({ collection: 'posts', id })
+await kernel.unpublish({ collection: 'posts', id })
+
+// schedule a future publish - stays a draft until then
+await kernel.publish({ collection: 'posts', id, publishAt: '2026-07-01T09:00:00Z' })
+```
+
+## Driving scheduled publishes
+
+```
+# a cron that flips due scheduled publishes
+* * * * * cd /app && node -e "require('./run').processScheduledPublishes()"
+```
+
+```
+await kernel.processScheduledPublishes() // → { published: [ids] }
+```
+
+## Browsing & restoring history
+
+```
+const { docs } = await kernel.findVersions({ collection: 'posts', id, limit: 20 })
+await kernel.restoreVersion({ collection: 'posts', id, versionId: docs[1].id })
+```
+
+> Saves can be flagged autosave: true so the version snapshot records that it was auto-saved - the admin uses this to distinguish auto-saved drafts from manual ones.
+
+---
+
+### Caching & search
+Read-through caching and access-checked full-text search, both adapter-based.
+
+## Caching
+
+Set a cache adapter on the config, then opt a collection in. Reads are served read-through and invalidated automatically on any write to that collection:
+
+```
+import { memoryCache, dbCache, redisCache } from 'kernelcms'
+
+export default defineConfig({
+ cache: memoryCache(), // or dbCache() / redisCache({ url })
+ cacheDefaults: { ttl: 60_000 }, // ms; 0 = live until invalidated
+ collections: [
+ { slug: 'posts', cache: true, fields: [/* … */] },
+ { slug: 'pages', cache: { ttl: 300_000 }, fields: [/* … */] },
+ ],
+})
+```
+
+## Full-text search
+
+Set a search adapter and list the searchable fields per collection. The index is updated on write:
+
+```
+import { memorySearch } from 'kernelcms'
+
+export default defineConfig({
+ search: memorySearch(),
+ collections: [
+ { slug: 'posts', search: { fields: ['title', 'body'] }, fields: [/* … */] },
+ ],
+})
+```
+
+```
+const { docs } = await kernel.searchDocs({ collection: 'posts', query: 'headless cms', limit: 25 })
+```
+
+> Search hits are loaded through the access-checked read path, so search never surfaces a document the caller cannot read - results are filtered, not just ranked.
+
+---
+
+### Webhooks
+Fire signed HTTP POSTs when documents change.
+
+## Configure webhooks
+
+```
+export default defineConfig({
+ webhooks: [
+ {
+ url: 'https://hooks.example.com/kernel',
+ secret: process.env.WEBHOOK_SECRET, // HMAC-SHA256 signing key
+ collections: ['posts'], // default: all non-system collections
+ events: ['create', 'update'], // default: create, update, delete
+ headers: { 'x-source': 'kernel' },
+ timeoutMs: 5000,
+ },
+ ],
+})
+```
+
+## Verifying the signature
+
+When `secret` is set, each delivery carries `x-kernel-signature: sha256=`. Recompute it over the raw body on your receiver:
+
+```
+import { createHmac } from 'node:crypto'
+
+const expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex')
+if (header !== expected) return res.status(401).end()
+```
+
+> Read the secret from the environment - never hardcode it. Restrict to the specific collections and events you need to keep the delivery surface tight.
+
+---
+
+### Migrations
+Diff-based, risk-classified, deterministic - and additive, so you cannot lose data by surprise.
+
+## Additive by default
+
+`kernel migrate` (and `dev`'s auto-migrate) **only create tables and add columns** - they never drop or retype. You can't lose data by editing your config.
+
+## Preview before applying
+
+```
+npx kernel migrate:status # exactly what would change, diffed against the snapshot
+npx kernel migrate # apply additive changes
+```
+
+Destructive changes (dropped, renamed, or retyped columns) are *reported* by `migrate:status` and by `migrate` when a snapshot exists, but must be applied by hand - a deliberate guardrail.
+
+## The schema snapshot
+
+```
+npx kernel migrate:snapshot # record kernel/schema-snapshot.json
+```
+
+Commit `kernel/schema-snapshot.json`. It is the baseline future drift checks diff against, so your team sees exactly what a deploy will alter.
+
+> Make kernel doctor your deploy preflight - it runs the static config checks and opens the database to confirm it's reachable, exiting non-zero if either fails.
+
+---
+
+### CLI reference
+Every command and the flags they share.
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| kernel init | Scaffold a kernel.config.ts. |
+| kernel dev | Auto-migrate, start the server + admin, watch the config. |
+| kernel start | Production server (no auto-migrate, prod toggles). |
+| kernel migrate | Apply additive schema changes. |
+| kernel migrate:status | Show pending + destructive changes vs the snapshot. |
+| kernel migrate:snapshot | Record the current schema as the baseline. |
+| kernel seed | Auto-migrate, then run your exported seed. |
+| kernel import | Auto-migrate, then bulk-import data. |
+| kernel generate:types | Emit TypeScript interfaces for your collections. |
+| kernel generate:module | Scaffold a new module. |
+| kernel jobs:run | Drain due background jobs (drive from cron). |
+| kernel doctor | Config + connectivity preflight (non-zero on failure). |
+| kernel info | Print resolved config + system facts. |
+
+## Shared flags
+
+- `--config ` - config path (default `./kernel.config.ts`). Every data command accepts it.
+
+- `--port ` - port for `dev`/`start` (default `$PORT` or 3000).
+
+- `--out ` - output for `generate:*` / snapshot path for `migrate:*`.
+
+## The seed convention
+
+```
+export const seed = async (kernel) => {
+ await kernel.create({
+ collection: 'users',
+ data: { email: 'admin@example.com', password: 'password123' },
+ overrideAccess: true,
+ })
+}
+export default defineConfig({ /* … */ })
+```
+
+---
+
+### Deployment
+One container, anywhere - plus embedding the whole CMS inside another app.
+
+## A single container
+
+```
+FROM node:24-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+ENV NODE_ENV=production
+CMD ["sh", "-c", "npx kernel migrate && npx kernel start"]
+```
+
+## Production environment
+
+```
+KERNEL_SECRET=
+DATABASE_URL=postgres://user:pass@host:5432/db
+KERNEL_CORS=https://app.example.com
+# opt back in only if you need them:
+# KERNEL_OPENAPI=true
+# KERNEL_GRAPHQL=true
+```
+
+> Set KERNEL_SECRET in every non-local environment (doctor errors without it). For CORS, use an explicit origin allow-list - never a wildcard with credentials.
+
+## Embed in Next.js (or any framework)
+
+KernelCMS is a web-standard `Request → Response` server, so it mounts in a single catch-all route:
+
+```
+// app/api/[...kernel]/route.ts
+import { kernel } from '@/lib/kernel'
+export const runtime = 'nodejs'
+const handler = (req: Request) => kernel.server.fetch(req)
+export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE }
+```
+
+Keep one kernel singleton, run it on the Node.js runtime, and let your platform proxy handle rate limiting. See the Next.js guide for the full setup.
+
+---
+
+## Guides
+
+### Add a Backend to Any Website (Including AI-Generated Sites)
+A complete, copy-paste guide to giving any site - static HTML, Next.js, or an AI-generated page from v0, Lovable, Bolt, or Cursor - a real backend, CMS, database, and editable content with KernelCMS. Includes a ready-made AI prompt.
+
+You have a website - maybe a static HTML page, a Next.js app, or something an AI tool like **v0, Lovable, Bolt, or Cursor** generated for you. It looks great, but the content is hardcoded. You cannot edit it without touching code, there is no database, no API, and no way for a non-developer to update a heading or add a blog post.
+
+This guide gives that site a real **backend**: a database, a REST and GraphQL API, authentication, and a no-code admin panel - using KernelCMS, an open-source (MIT) TypeScript headless CMS. You keep your existing design; you only move the content into a backend and read it back. There is a ready-made AI prompt that does the whole thing for you, and a manual walkthrough if you prefer.
+
+## How KernelCMS works in one minute
+
+You describe your content in a single `kernel.config.ts` file. From that one file, KernelCMS generates everything:
+
+- A **typed content engine** and a **database** (SQLite by default, zero native dependencies; or Postgres, MySQL, MongoDB).
+
+- An auto-generated **REST API** and **GraphQL API**, plus a typed in-process **Local API**.
+
+- A polished **React admin panel** with live preview and a page builder, so editors work with no code.
+
+- A **CLI** for migrations, seeding, and running the server.
+
+It runs on web standards (a `Request` goes in, a `Response` comes out), so it has **no framework lock-in** - it sits next to any frontend and deploys as a single container.
+
+## The ready-made prompt (let your AI do it)
+
+If you built your site with an AI tool, the fastest path is to let the same tool add the backend. Copy this prompt into Claude, Cursor, ChatGPT, v0, Lovable, or Bolt, fill in the two placeholders at the bottom, and run it:
+
+```
+You are adding a backend and CMS to my website using KernelCMS, an open-source
+(MIT) TypeScript headless CMS. First, read the full KernelCMS reference here:
+https://kernelcms.com/llms-full.txt
+
+How KernelCMS works:
+- I define my content model in ONE file, kernel.config.ts (collections + fields).
+- From that, KernelCMS generates a REST API, a GraphQL API, a typed in-process
+ Local API, a React admin panel, and a CLI. It runs on web standards
+ (Request -> Response) with NO framework lock-in, self-hosted on one container.
+- Default database is SQLite via node:sqlite (zero native deps). Postgres/MySQL/
+ Mongo are a one-line swap.
+
+Do this, step by step, and show me the exact files to create or edit:
+1. Install: npm install kernelcms
+2. Look at my site and list every piece of content that should be editable
+ (headings, paragraphs, images, and repeating items like posts/products/FAQs).
+3. Create kernel.config.ts that models each as a collection or a singleton global,
+ using the right field types (text, textarea, richText, number, date, upload,
+ relationship, array, blocks). Put access: { read: () => true } on anything the
+ public site shows. Add one auth collection (auth: true) so I can log in.
+4. Run: npx kernel dev then confirm the admin at /admin and the API at /api work.
+5. Seed my CURRENT hardcoded content into the database: write an exported seed
+ function (or use kernel import) that creates today's content as documents, using
+ overrideAccess: true.
+6. In my frontend, replace the hardcoded content with data fetched from KernelCMS.
+ Use the typed client from 'kernelcms/client', or plain fetch('/api/').
+ Do NOT change my visual design or markup - only swap the data source.
+7. Show me production: npx kernel migrate then npx kernel start, with KERNEL_SECRET
+ and DATABASE_URL set.
+
+Constraints: use TypeScript, keep the config minimal and typed, explain each step.
+
+MY SITE (framework / files / description): [paste here]
+WHAT SHOULD BE EDITABLE: [list headings, sections, and lists here]
+```
+
+Because the prompt points the assistant at kernelcms.com/llms-full.txt, it reads the entire KernelCMS reference before writing a line - so the config and API calls it generates are accurate.
+
+## Step by step (the manual way)
+
+### 1. Install
+
+```
+npm install kernelcms
+```
+
+### 2. Model your content
+
+Look at your page and decide what should be editable. A heading and intro become a **global** (a singleton); a list of posts or products becomes a **collection**. Create `kernel.config.ts`:
+
+```
+import { defineConfig } from 'kernelcms'
+import { sqliteAdapter } from 'kernelcms/sqlite'
+
+export default defineConfig({
+ secret: process.env.KERNEL_SECRET ?? 'dev-only-secret',
+ db: sqliteAdapter({ url: 'file:./content.db' }),
+ collections: [
+ { slug: 'users', auth: true, fields: [{ name: 'name', type: 'text' }] },
+ {
+ slug: 'posts',
+ access: { read: () => true }, // public site can read these
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'slug', type: 'slug', unique: true },
+ { name: 'body', type: 'richText' },
+ { name: 'cover', type: 'upload', relationTo: 'media' },
+ ],
+ },
+ { slug: 'media', upload: true, fields: [{ name: 'alt', type: 'text' }] },
+ ],
+ globals: [
+ { slug: 'home', access: { read: () => true }, fields: [
+ { name: 'headline', type: 'text' },
+ { name: 'intro', type: 'textarea' },
+ ] },
+ ],
+})
+```
+
+### 3. Run it
+
+```
+npx kernel dev
+```
+
+This creates the database, starts the API at `http://localhost:3000/api`, and the admin at `http://localhost:3000/admin` (the first visit asks you to create your login).
+
+### 4. Move your existing content in
+
+Get today's hardcoded content into the database once. Export a `seed` function next to your config and run `npx kernel seed`:
+
+```
+export const seed = async (kernel) => {
+ await kernel.updateGlobal({ slug: 'home', overrideAccess: true,
+ data: { headline: 'My site', intro: 'The intro that used to be hardcoded.' } })
+ await kernel.create({ collection: 'posts', overrideAccess: true,
+ data: { title: 'Hello world', slug: 'hello-world', body: '...' } })
+}
+```
+
+### 5. Read it back in your frontend
+
+Replace the hardcoded values with data from the API. Keep your markup exactly as it is - only the source changes. Plain fetch works anywhere:
+
+```
+// any frontend - static, React, Vue, Astro, Next.js
+const home = await fetch('http://localhost:3000/api/globals/home').then((r) => r.json())
+const { docs: posts } = await fetch('http://localhost:3000/api/posts?depth=1').then((r) => r.json())
+
+// render home.headline, home.intro, and posts exactly where the hardcoded text was
+```
+
+Prefer types? Use the typed client:
+
+```
+import { createClient } from 'kernelcms/client'
+const kernel = createClient({ baseURL: 'http://localhost:3000/api' })
+const { docs } = await kernel.find({ collection: 'posts', depth: 1 })
+```
+
+### 6. Hand it to your team (no code)
+
+That is it - the content now lives in the admin. Anyone you invite can edit headings, copy, images, and add posts at `/admin`, with live preview and a page builder. No code, no redeploy for content changes.
+
+### 7. Deploy
+
+```
+# one container, anywhere. set KERNEL_SECRET and DATABASE_URL in production
+npx kernel migrate && npx kernel start
+```
+
+Swap the SQLite adapter for `postgresAdapter()` and set `DATABASE_URL` when you outgrow a single file. See Deployment.
+
+## Migrating an existing or AI-generated site
+
+The pattern is always the same, whatever generated the site:
+
+- **Inventory the content.** Walk the page and list every bit of text, every image, and every repeating block. Repeating blocks (posts, products, testimonials, FAQs) become collections; one-off page content becomes globals.
+
+- **Model it** in `kernel.config.ts` with matching field types.
+
+- **Seed** the current values so nothing visually changes on day one.
+
+- **Swap the data source** - replace hardcoded JSX/HTML values with API reads, keeping the design identical.
+
+- **Invite editors.** From now on, content changes happen in the admin, not in code.
+
+> Doing this with an AI assistant? Use the ready-made prompt and point it at kernelcms.com/llms-full.txt so it has the full reference. It will inventory, model, seed, and rewire your frontend in one pass.
+
+## Frequently asked questions
+
+### How do I add a backend to my AI-generated website?
+
+Install KernelCMS, model your content in a `kernel.config.ts` file, run `kernel dev`, and fetch the content from its REST or GraphQL API in your existing frontend. You keep your design and markup; only the data source changes. The ready-made prompt above does it for you with an AI assistant.
+
+### Can I add a CMS to a static HTML site?
+
+Yes. KernelCMS runs as a standalone API and admin, so static pages fetch content from `/api/` at build time or at runtime. No framework is required.
+
+### How do I make a v0, Lovable, Bolt, or Cursor site editable?
+
+Paste the ready-made prompt into the same AI tool (or Claude, Cursor, or ChatGPT) and point it at kernelcms.com/llms-full.txt. It will model your content, wire up the API, and replace hardcoded text and images with editable content.
+
+### What is the best backend for an AI-generated site?
+
+One that is framework-agnostic, typed, self-hosted, and fast to set up. KernelCMS adds a REST + GraphQL API, a database, authentication, and a no-code admin from a single config file, without locking you into a framework.
+
+### Do I have to rebuild my site to add a backend?
+
+No. You keep your existing markup and design and only swap hardcoded content for API calls. KernelCMS sits alongside your frontend rather than replacing it.
+
+### Can non-developers edit the content afterwards?
+
+Yes. KernelCMS ships a React admin with live preview and a blocks page builder, so editors change pages, copy, and media with no code.
+
+### What database does KernelCMS use?
+
+SQLite by default, via Node's built-in `node:sqlite` with zero native dependencies. Switch to PostgreSQL, MySQL, or MongoDB with a one-line change.
+
+---
+
+### Embed KernelCMS in Next.js
+Mount the full CMS - REST, GraphQL, and admin - inside an existing Next.js app behind a single route.
+
+KernelCMS is a web-standard `Request → Response` server, so it drops into any Next.js route handler. You keep one kernel singleton, run it on the Node.js runtime, and let the platform proxy handle rate limiting.
+
+## A kernel singleton
+
+```
+// lib/kernel.ts
+import { initKernel } from 'kernelcms'
+import config from '../kernel.config.ts'
+export const kernel = await initKernel(config)
+```
+
+## A single catch-all route
+
+```
+// app/api/[...kernel]/route.ts
+import { kernel } from '@/lib/kernel'
+export const runtime = 'nodejs'
+const handler = (req: Request) => kernel.server.fetch(req)
+export { handler as GET, handler as POST, handler as PUT, handler as DELETE }
+```
+
+## Allow .ts imports
+
+The config graph uses `.ts` import extensions, so allow them in the tsconfig that covers it:
+
+```
+{ "compilerOptions": { "allowImportingTsExtensions": true, "noEmit": true } }
+```
+
+---
+
+### Uploads & image variants
+Add S3 or R2 storage and auto-generate resized image variants with focal points.
+
+Add a storage adapter, an image processor, and an `imageSizes` list, then reference uploads with an `upload` field.
+
+```
+import { s3Storage } from 'kernelcms/storage'
+import { sharpImageProcessor } from '@kernel/image-sharp'
+
+export default defineConfig({
+ storage: s3Storage({ bucket: process.env.S3_BUCKET }),
+ image: sharpImageProcessor(),
+ collections: [
+ { slug: 'media', upload: {
+ focalPoint: true,
+ imageSizes: [
+ { name: 'thumb', width: 400, fit: 'cover', format: 'webp' },
+ { name: 'hero', width: 1600 },
+ ],
+ }, fields: [{ name: 'alt', type: 'text', required: true }] },
+ ],
+})
+```
+
+---
+
+### Password reset & two-factor
+Turn on email password reset and TOTP two-factor with one config flag each.
+
+Auth features are opt-in on the collection. No user-enumeration, scrypt hashing, and TOTP built on `node:crypto` with zero extra dependencies.
+
+```
+{ slug: 'users', auth: { forgotPassword: true, twoFactor: true, verify: true } }
+```
+
+## Wire the reset flow
+
+```
+await kernel.forgotPassword({ collection: 'users', email })
+// user clicks the emailed link → your page calls:
+await kernel.resetPassword({ collection: 'users', token, password })
+```
+
+---
+
+### Add products & checkout
+The commerce module gives you products, orders, a server-side checkout, and signed Stripe webhooks.
+
+Add the `commerce()` plugin with a payment adapter and you get `products` + `orders` collections, a `POST /commerce/checkout` that recomputes totals from real prices server-side, and a signature-verified webhook.
+
+```
+import { commerce, stripePayment } from 'kernelcms'
+
+export default defineConfig({
+ plugins: [commerce({ payment: stripePayment({ secret: process.env.STRIPE_KEY }) })],
+})
+```
+
+> A deterministic testPayment() adapter ships alongside Stripe so you can test the full checkout in CI without network calls.
+
+---
+
+### Deploy to a single container
+One Dockerfile, one container, anywhere - with Postgres via DATABASE_URL.
+
+KernelCMS ships as one container. Set `KERNEL_SECRET` and `DATABASE_URL`, run `migrate` on boot, then `start`.
+
+```
+CMD ["sh", "-c", "npx kernel migrate && npx kernel start"]
+```
+
+```
+KERNEL_SECRET=
+DATABASE_URL=postgres://user:pass@host:5432/db
+```
+
+---
+
+### Custom admin field components
+Register custom field inputs, list cells, and dashboard widgets via window.KernelCMS.
+
+The admin exposes registries for extension without forking it. Load a script via the server's `admin.scripts` option, then register by key.
+
+```
+window.KernelCMS.fields.register('ColorPicker', ColorPicker)
+window.KernelCMS.cells.register('StatusBadge', StatusBadge)
+window.KernelCMS.widgets.register(RecentActivity)
+```
+
+```
+{ name: 'brandColor', type: 'text', admin: { component: 'ColorPicker' } }
+```
+
+---
+
+## Comparisons & articles
+
+### KernelCMS vs Payload: two code-first CMSs, one big difference
+They share a philosophy - TypeScript, config-as-code, a typed Local API, auto-generated REST and GraphQL. The real split is framework coupling: Payload 3 lives inside Next.js; KernelCMS runs on bare web standards.
+
+**Bottom line.** Payload and KernelCMS share a TypeScript, config-as-code design and a typed Local API. Choose Payload for maturity, the Lexical editor, and tight Next.js integration; choose KernelCMS to avoid framework coupling and ship a lean single container.
+
+Of every CMS in this series, Payload is the one KernelCMS resembles most. Both are open-source, MIT-licensed, and TypeScript-native. Both model content as code, expose an in-process Local API alongside auto-generated REST and GraphQL, and lean on access functions and lifecycle hooks. If you squint at a collection definition, you could mistake one for the other.
+
+So this comparison is less about features and more about a single architectural decision - and what it costs you.
+
+## The hard facts
+
+| | KernelCMS | Payload |
+| --- | --- | --- |
+| License | MIT | MIT |
+| Language | TypeScript, config-as-code | TypeScript, config-as-code |
+| Framework | None - web-standard Request → Response | Next.js (Payload 3 runs in the App Router) |
+| Databases | SQLite (node:sqlite), Postgres, MySQL, Mongo | MongoDB, Postgres, SQLite (Drizzle) |
+| APIs | REST, GraphQL, typed Local API | REST, GraphQL, Local API |
+| Rich text | Structured richText | Lexical (deep block/inline support) |
+| Admin | React on TanStack | React inside Next.js |
+| Default install | Zero native deps (node:sqlite) | Heavier; Next.js toolchain |
+| Hosting | Self-host single container; Cloud | Self-host; Payload Cloud (Figma-owned) |
+| Maturity | New (2026) | Mature, large community |
+
+## Modeling the same content
+
+Here is a posts collection in Payload:
+
+```
+import { buildConfig } from 'payload'
+import { postgresAdapter } from '@payloadcms/db-postgres'
+
+export default buildConfig({
+ db: postgresAdapter({ pool: { connectionString: process.env.DATABASE_URL } }),
+ collections: [
+ {
+ slug: 'posts',
+ access: { read: () => true },
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+ { name: 'author', type: 'relationship', relationTo: 'users' },
+ ],
+ },
+ ],
+})
+```
+
+And the same thing in KernelCMS:
+
+```
+import { defineConfig } from 'kernelcms'
+import { postgresAdapter } from 'kernelcms/postgres'
+
+export default defineConfig({
+ db: postgresAdapter(), // reads DATABASE_URL
+ collections: [
+ {
+ slug: 'posts',
+ access: { read: () => true },
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+ { name: 'author', type: 'relationship', relationTo: 'users' },
+ ],
+ },
+ ],
+})
+```
+
+Near-identical, by design. The field set, access shape, and relationship model are deliberately familiar. Querying is the same story:
+
+```
+// Payload
+const { docs } = await payload.find({ collection: 'posts', where: { status: { equals: 'published' } }, depth: 1 })
+
+// KernelCMS
+const { docs } = await kernel.find({ collection: 'posts', where: { status: { equals: 'published' } }, depth: 1 })
+```
+
+## The one big difference
+
+Payload 3 is built *on* Next.js - it installs into your Next app and runs inside the App Router. If you are already a Next.js shop, that is a genuine advantage: one app, one build, one deploy, server components that read content directly.
+
+KernelCMS takes the opposite stance. It is a web-standard `Request → Response` server with no framework opinion. It runs on bare Node, on the edge, or in any container, and it embeds into Next.js, Nuxt, Astro, or nothing at all - through one catch-all route:
+
+```
+// app/api/[...kernel]/route.ts - KernelCMS inside Next, by choice not by requirement
+import { kernel } from '@/lib/kernel'
+export const runtime = 'nodejs'
+const handler = (req: Request) => kernel.server.fetch(req)
+export { handler as GET, handler as POST, handler as PUT, handler as DELETE }
+```
+
+## Where Payload wins
+
+- **Maturity.** Years in production, a large community, and a deep plugin ecosystem. KernelCMS is new; Payload is proven.
+
+- **The editor.** Payload's Lexical-based rich text supports inline blocks, custom nodes, and a mature extension API. It is the single biggest gap for any newcomer, KernelCMS included.
+
+- **Next.js integration.** If your product *is* a Next app, Payload's in-app model is a feature, not a constraint.
+
+- **Backing.** Figma acquired Payload in 2025 - resources and longevity behind it.
+
+## Where KernelCMS wins
+
+- **No framework coupling.** Run the whole CMS - engine, admin, APIs - without adopting Next.js or any framework. Deploy it as one lean container.
+
+- **Lean by default.** The default database is `node:sqlite`: zero native dependencies, nothing to compile, boots in seconds.
+
+- **Portability.** Web-standard request handling means Node, edge, on-prem, or embedded in whatever framework you already use.
+
+## Verdict
+
+If your stack is Next.js and you want the most mature editor and ecosystem available in open source, **Payload is an excellent, safe choice** - and its Next integration will feel like a superpower. If you want a CMS that stays out of your stack - embeddable anywhere, deployable as a single lean container, with no framework opinion - that is precisely the gap KernelCMS was built to fill.
+
+> Facts current as of June 2026. Headless-CMS pricing, ownership, and feature sets change quickly - verify the specifics against each vendor before you decide. This is KernelCMS's own blog, so we have skin in the game; we've tried to keep the comparisons fair and to say plainly where the others are better.
+
+## Frequently asked questions
+
+### Is KernelCMS a good Payload alternative?
+
+If you want the same TypeScript, config-as-code workflow and a typed Local API without coupling your CMS to Next.js, yes. Payload remains the more mature option, with a richer rich-text editor and a larger ecosystem.
+
+### Does Payload require Next.js?
+
+Payload 3 runs inside the Next.js App Router. KernelCMS runs on a web-standard Request-to-Response server and deploys as a standalone container or embeds into any framework.
+
+## Sources & further reading
+
+- Payload documentation
+- Payload: what is Payload (runs on Next.js)
+- KernelCMS documentation
+
+**How we compare.** Each comparison is based on the competitor's official documentation and hands-on use of both tools, weighing architecture, licensing, hosting, APIs, and the developer and editor experience. We revise them as the tools change. Robbin Pilhede is the creator and maintainer of KernelCMS. These comparisons draw on hands-on experience building the engine and on each competitor's official documentation. *Last reviewed Jun 13, 2026.*
+
+---
+
+### KernelCMS vs Sanity: own your data, or rent best-in-class editing
+Sanity gives you real-time collaboration and a zero-ops hosted backend - at the cost of lock-in to the Content Lake and a usage-based bill. KernelCMS gives you the whole stack, self-hosted, MIT.
+
+**Bottom line.** Sanity offers best-in-class real-time editing on a hosted backend; KernelCMS lets you self-host and own your data under MIT. Pick based on whether you value managed collaboration or data ownership and predictable cost.
+
+Sanity and KernelCMS sit on opposite ends of the headless spectrum. Sanity is a hosted platform: your content lives in its proprietary *Content Lake*, you query it with GROQ, and editors collaborate in real time in the open-source Studio. KernelCMS is software you run: your content lives in your database, and you own every byte.
+
+The choice is less "which has more features" than "what do you want to own."
+
+## The hard facts
+
+| | KernelCMS | Sanity |
+| --- | --- | --- |
+| License | MIT (core) | Studio MIT; Content Lake proprietary |
+| Where content lives | Your database | Hosted Content Lake (no self-host) |
+| Query | REST, GraphQL, typed Local API | GROQ + GraphQL |
+| Real-time collaboration | Not yet | Yes - best-in-class |
+| Hosting | Self-host anywhere | SaaS; data lives in Sanity |
+| Pricing | Free (OSS) + your infra | Usage-based SaaS; free tier, scales up |
+| Image CDN | Bring your own (S3/R2 + sharp) | Hosted pipeline + CDN included |
+| Lock-in | None - portable content | Content Lake + GROQ |
+
+## Modeling content
+
+A Sanity schema is JavaScript/TypeScript using its `defineType` helpers:
+
+```
+import { defineType, defineField } from 'sanity'
+
+export const post = defineType({
+ name: 'post',
+ type: 'document',
+ fields: [
+ defineField({ name: 'title', type: 'string', validation: (r) => r.required() }),
+ defineField({ name: 'body', type: 'array', of: [{ type: 'block' }] }), // Portable Text
+ defineField({ name: 'author', type: 'reference', to: [{ type: 'author' }] }),
+ ],
+})
+```
+
+KernelCMS models the same thing in its config, and the field types map to real database columns rather than documents in a hosted lake:
+
+```
+{
+ slug: 'posts',
+ access: { read: () => true },
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+ { name: 'author', type: 'relationship', relationTo: 'authors' },
+ ],
+}
+```
+
+## Querying
+
+Sanity's GROQ is genuinely powerful - a concise, projection-first query language:
+
+```
+*[_type == "post" && defined(slug.current)] | order(_createdAt desc) [0...10] {
+ title,
+ "author": author->name
+}
+```
+
+KernelCMS uses a structured `Where` object across REST, GraphQL, and the Local API - less expressive than GROQ, but typed and uniform:
+
+```
+await kernel.find({
+ collection: 'posts',
+ where: { slug: { exists: true } },
+ sort: '-createdAt',
+ limit: 10,
+ depth: 1,
+})
+```
+
+## Where Sanity wins
+
+- **Real-time collaboration.** Multiple editors in the same document, live - the best in the category. KernelCMS has no equivalent today.
+
+- **Portable Text.** A serious, well-specified model for structured rich content.
+
+- **Zero-ops backend + image CDN.** No database to run, no media pipeline to build - it is all hosted and fast.
+
+- **GROQ.** For complex content shaping, GROQ is more expressive than a structured filter object.
+
+## Where KernelCMS wins
+
+- **You own the data.** It lives in your Postgres/SQLite/MySQL/Mongo - no Content Lake, no export step to leave.
+
+- **Self-host anywhere,** including on-prem and air-gapped, where a hosted SaaS simply can't go.
+
+- **Predictable cost.** No per-seat or usage billing that grows with traffic and team size.
+
+- **One uniform API surface** - REST, GraphQL, and a typed Local API over the same access rules - without learning a query language.
+
+## Verdict
+
+Choose **Sanity** when collaborative editing and a managed, scalable backend are worth lock-in and a usage bill - for many content teams, they are. Choose **KernelCMS** when data ownership, self-hosting, and predictable cost matter more than hosted convenience.
+
+> Facts current as of June 2026. Headless-CMS pricing, ownership, and feature sets change quickly - verify the specifics against each vendor before you decide. This is KernelCMS's own blog, so we have skin in the game; we've tried to keep the comparisons fair and to say plainly where the others are better.
+
+## Frequently asked questions
+
+### Can I self-host Sanity?
+
+No. Sanity stores content in its hosted Content Lake. KernelCMS is self-hosted and keeps content in your own database.
+
+### Is KernelCMS a good Sanity alternative?
+
+If you want to own your data, self-host, and avoid usage-based pricing, yes. Sanity still leads on real-time collaboration and managed infrastructure.
+
+## Sources & further reading
+
+- Sanity documentation
+- GROQ query language
+- KernelCMS documentation
+
+**How we compare.** Each comparison is based on the competitor's official documentation and hands-on use of both tools, weighing architecture, licensing, hosting, APIs, and the developer and editor experience. We revise them as the tools change. Robbin Pilhede is the creator and maintainer of KernelCMS. These comparisons draw on hands-on experience building the engine and on each competitor's official documentation. *Last reviewed Jun 13, 2026.*
+
+---
+
+### KernelCMS vs Strapi: code-first vs admin-first modeling
+Strapi models content in an admin UI and ships a huge plugin marketplace. KernelCMS models content in typed code you can review and version. The difference shows up the day your schema changes.
+
+**Bottom line.** Strapi models content in an admin UI with a large plugin marketplace; KernelCMS models it in typed, version-controlled code while still giving editors a no-code admin with live preview and a page builder.
+
+Strapi is one of the most popular open-source headless CMSs, and for good reason: a friendly admin, a big plugin marketplace, and broad database support. Its defining trait is that you build your content model primarily in a UI - the Content-Type Builder - which writes schema files behind the scenes.
+
+KernelCMS inverts that: the model is code first, always. Which you prefer depends on who edits your schema, and how.
+
+## The hard facts
+
+| | KernelCMS | Strapi |
+| --- | --- | --- |
+| License | MIT | Community Edition (open source) + paid Enterprise |
+| Language | TypeScript-first | JavaScript/TypeScript |
+| Content model | Typed code (kernel.config.ts) | Admin UI (Content-Type Builder) + schema files |
+| Databases | SQLite, Postgres, MySQL, Mongo | SQLite, Postgres, MySQL, MariaDB |
+| APIs | REST, GraphQL, typed Local API | REST, GraphQL |
+| Ecosystem | Plugins + modules (new) | Large, mature plugin marketplace |
+| Framework | None (web-standard server) | Node.js (Koa-based) |
+
+## Modeling content
+
+In Strapi, a content type is typically created in the admin; the generated schema looks like this:
+
+```
+{
+ "kind": "collectionType",
+ "collectionName": "posts",
+ "info": { "singularName": "post", "pluralName": "posts" },
+ "attributes": {
+ "title": { "type": "string", "required": true },
+ "body": { "type": "richtext" },
+ "author": { "type": "relation", "relation": "manyToOne", "target": "api::author.author" }
+ }
+}
+```
+
+KernelCMS keeps the model in typed code that lives in version control and gets code-reviewed like anything else:
+
+```
+{
+ slug: 'posts',
+ fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+ { name: 'author', type: 'relationship', relationTo: 'authors' },
+ ],
+}
+```
+
+## Querying
+
+```
+# Strapi REST
+GET /api/posts?filters[status][$eq]=published&populate=author
+```
+
+```
+# KernelCMS REST
+GET /api/posts?where[status][equals]=published&depth=1
+```
+
+## Where Strapi wins
+
+- **Plugin marketplace.** A large catalogue of community plugins - the deepest in open-source CMS land.
+
+- **Admin-first modeling.** Non-developers can build content types without touching code.
+
+- **Maturity and community.** Battle-tested, widely deployed, lots of tutorials and hires who know it.
+
+## Where KernelCMS wins
+
+- **The model is code.** Versioned, reviewable, diffable - no drift between what the UI built and what's in git.
+
+- **No-code editing too.** The model is code, but your team still edits pages, copy, and media in a no-code admin with live preview and a page builder. You don't trade editor-friendliness for code-first modeling; you keep both.
+
+- **TypeScript-first inference** across collections, the Local API, and the generated client.
+
+- **Lighter and framework-agnostic** - a web-standard server, not a Node framework you boot into.
+
+- **Deterministic migrations** generated from the model, previewable before they run.
+
+## Verdict
+
+Choose **Strapi** if you value an admin-driven workflow for non-developers and the largest plugin ecosystem in open source. Choose **KernelCMS** if your content model belongs in code - typed, reviewed, and versioned alongside the rest of your application.
+
+> Facts current as of June 2026. Headless-CMS pricing, ownership, and feature sets change quickly - verify the specifics against each vendor before you decide. This is KernelCMS's own blog, so we have skin in the game; we've tried to keep the comparisons fair and to say plainly where the others are better.
+
+## Frequently asked questions
+
+### Is KernelCMS lighter than Strapi?
+
+Yes. The default database is Node's built-in node:sqlite with zero native dependencies, and there is no framework to boot into.
+
+### Can non-developers edit content in KernelCMS like in Strapi?
+
+Yes. Editors get a no-code admin with live preview and a blocks page builder; only the content model lives in code.
+
+## Sources & further reading
+
+- Strapi documentation
+- KernelCMS documentation
+
+**How we compare.** Each comparison is based on the competitor's official documentation and hands-on use of both tools, weighing architecture, licensing, hosting, APIs, and the developer and editor experience. We revise them as the tools change. Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---
+
+### KernelCMS vs Contentful: self-hosted code vs enterprise SaaS
+Contentful is the enterprise API-first standard - global CDN, environments, SLAs. KernelCMS is the self-hosted, MIT, code-first alternative without the bill or the lock-in.
+
+**Bottom line.** Contentful is enterprise SaaS with a global CDN, environments, and SLAs; KernelCMS is the self-hosted, MIT, code-first alternative without the per-seat bill or the lock-in.
+
+Contentful helped define the headless category and remains the default for large enterprises: an API-first, fully hosted platform with a global CDN, content environments, and the operational guarantees big companies require. KernelCMS competes on a different axis - ownership and cost - rather than trying to out-enterprise the enterprise.
+
+## The hard facts
+
+| | KernelCMS | Contentful |
+| --- | --- | --- |
+| License | MIT | Proprietary SaaS |
+| Hosting | Self-host (your infra) | SaaS only |
+| Content model | Typed code | Web UI / Content Management API |
+| Delivery API | REST + GraphQL + Local | Content Delivery API (REST) + GraphQL |
+| CDN | Bring your own | Global CDN included |
+| Environments | Branches via your own infra | First-class spaces + environments |
+| Pricing | Free (OSS) + your infra | SaaS; enterprise pricing at scale |
+
+## Modeling content
+
+Contentful content types are usually defined in the web app or via the management API; you then read content over the Delivery API:
+
+```
+# Contentful Content Delivery API
+GET https://cdn.contentful.com/spaces/{space}/environments/master/entries?content_type=post
+Authorization: Bearer 
+```
+
+KernelCMS defines the model in code and serves it from your own infrastructure:
+
+```
+{ slug: 'posts', access: { read: () => true }, fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'body', type: 'richText' },
+] }
+```
+
+```
+# KernelCMS REST, from your own domain
+GET /api/posts?where[status][equals]=published&depth=1
+```
+
+## Where Contentful wins
+
+- **Enterprise scale and reliability.** A proven global CDN, uptime SLAs, and the operational maturity large orgs need.
+
+- **Environments and spaces.** First-class content branching and staging built in.
+
+- **Integrations and governance.** A deep marketplace plus roles, audit, and compliance tooling.
+
+## Where KernelCMS wins
+
+- **You own the data and the deployment** - no SaaS dependency, no vendor outage you can't fix.
+
+- **Cost.** No platform bill that scales with API calls, seats, and records.
+
+- **Code-first model** with full type inference and a typed Local API.
+
+- **No lock-in.** Standard databases, portable content, MIT license.
+
+## Verdict
+
+Choose **Contentful** when you need enterprise-grade hosted infrastructure, environments, and SLAs, and the budget is there. Choose **KernelCMS** when you'd rather own the stack, control the cost, and keep the content model in code.
+
+> Facts current as of June 2026. Headless-CMS pricing, ownership, and feature sets change quickly - verify the specifics against each vendor before you decide. This is KernelCMS's own blog, so we have skin in the game; we've tried to keep the comparisons fair and to say plainly where the others are better.
+
+## Frequently asked questions
+
+### Is KernelCMS cheaper than Contentful?
+
+It is MIT-licensed and self-hosted, so there is no per-seat or per-API-call SaaS bill - you pay only for your own infrastructure.
+
+### Can I self-host instead of using Contentful?
+
+Yes. KernelCMS runs on a single container and stores content in your own database, with no SaaS dependency.
+
+## Sources & further reading
+
+- Contentful developer documentation
+- KernelCMS documentation
+
+**How we compare.** Each comparison is based on the competitor's official documentation and hands-on use of both tools, weighing architecture, licensing, hosting, APIs, and the developer and editor experience. We revise them as the tools change. Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---
+
+### KernelCMS vs Directus: config-first vs database-first
+Directus wraps an existing SQL database and gives you an instant API. KernelCMS defines the model in typed code and generates the database. Two philosophies - and a licensing difference worth knowing.
+
+**Bottom line.** Directus wraps an existing database (database-first, BSL); KernelCMS defines the model in typed code (config-first, MIT) and generates the schema. Pick Directus for existing SQL data, KernelCMS for a new code-owned model.
+
+Directus is the standout database-first option: point it at an existing SQL database and it mirrors your tables into an instant REST and GraphQL API with a polished data studio. KernelCMS goes the other way - you describe the model in code, and it owns and migrates the schema for you.
+
+If you already have a database full of data, that difference is the whole decision.
+
+## The hard facts
+
+| | KernelCMS | Directus |
+| --- | --- | --- |
+| License | MIT | BSL 1.1 (converts to GPL; not OSI-approved) |
+| Approach | Config-first (model in code) | Database-first (model in the database) |
+| Databases | SQLite, Postgres, MySQL, Mongo | Postgres, MySQL, SQLite, MS SQL, Oracle |
+| Admin | React on TanStack | Vue "Data Studio" |
+| APIs | REST, GraphQL, typed Local API | REST, GraphQL, SDK |
+| Best for | New, code-owned schemas | Wrapping existing/legacy databases |
+
+> One concrete licensing fact: KernelCMS is MIT; Directus moved to the Business Source License (BSL 1.1), which is source-available but not OSI-approved open source (each version converts to GPL after a delay). For some teams and procurement processes, that distinction matters.
+
+## Modeling content
+
+With Directus, the database is the source of truth - you define tables (in SQL or the studio) and Directus exposes them:
+
+```
+-- Directus: your database table IS the content model
+CREATE TABLE posts (
+ id SERIAL PRIMARY KEY,
+ title TEXT NOT NULL,
+ status TEXT DEFAULT 'draft',
+ author INTEGER REFERENCES authors(id)
+);
+```
+
+With KernelCMS, the code is the source of truth and the schema is generated from it:
+
+```
+{ slug: 'posts', fields: [
+ { name: 'title', type: 'text', required: true },
+ { name: 'status', type: 'select', options: ['draft', 'published'], defaultValue: 'draft' },
+ { name: 'author', type: 'relationship', relationTo: 'authors' },
+] }
+```
+
+## Querying
+
+```
+// Directus SDK
+import { createDirectus, rest, readItems } from '@directus/sdk'
+const client = createDirectus('https://example.com').with(rest())
+const posts = await client.request(readItems('posts', { filter: { status: { _eq: 'published' } } }))
+```
+
+```
+// KernelCMS Local API
+const { docs } = await kernel.find({ collection: 'posts', where: { status: { equals: 'published' } } })
+```
+
+## Where Directus wins
+
+- **Existing databases.** Point it at a database you already have and get an API in minutes - no remodeling.
+
+- **SQL-native.** Your data stays in plain tables you can query directly with any SQL tool.
+
+- **The Data Studio.** A flexible, no-code admin for exploring and editing arbitrary data.
+
+## Where KernelCMS wins
+
+- **The model lives in version control** - typed, reviewed, and diffable, not implied by table structure.
+
+- **MIT vs BSL.** A permissive, OSI-approved license with no conversion clause.
+
+- **Typed Local API** and end-to-end inference from the same config.
+
+- **Deterministic, additive migrations** generated from code - preview every change before it runs.
+
+## Verdict
+
+Choose **Directus** when you have an existing SQL database to expose, or you want SQL-native data with a no-code studio on top. Choose **KernelCMS** when you're building a new model you'd rather own in typed code, under an MIT license, with migrations derived from that code.
+
+> Facts current as of June 2026. Headless-CMS pricing, ownership, and feature sets change quickly - verify the specifics against each vendor before you decide. This is KernelCMS's own blog, so we have skin in the game; we've tried to keep the comparisons fair and to say plainly where the others are better.
+
+## Frequently asked questions
+
+### What is the difference between config-first and database-first?
+
+Directus is database-first: it mirrors an existing SQL database into an API. KernelCMS is config-first: you define the model in typed code and it generates and migrates the schema.
+
+### Is KernelCMS's license more permissive than Directus?
+
+Yes. KernelCMS is MIT. Directus uses the Business Source License (BSL 1.1), which is source-available but not OSI-approved open source.
+
+## Sources & further reading
+
+- Directus documentation
+- Directus license (BSL 1.1)
+- KernelCMS documentation
+
+**How we compare.** Each comparison is based on the competitor's official documentation and hands-on use of both tools, weighing architecture, licensing, hosting, APIs, and the developer and editor experience. We revise them as the tools change. Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---
+
+### The content layer agents and humans share
+Every company is wiring agents into their content. Almost nobody is doing it with a real permission model. Here is how KernelCMS treats an agent as a first-class, access-controlled actor.
+
+In 2026, the interesting question about a CMS is no longer "how do editors put words on a page." It is "who - or *what* - is allowed to read and write this content, and under which rules." Agents are now writers, summarizers, and moderators. They need the same thing humans have always needed: scoped, audited access.
+
+## The problem with API glue
+
+Most teams bolt an agent onto their CMS through a pile of hand-rolled API calls and a service token with god-mode. That token can read every draft, every user record, every secret field. There is no row-level scoping, no field-level redaction, no audit trail.
+
+> An agent should not be able to read or write a field that a human in the same role could not.
+
+## One access model over both
+
+KernelCMS already runs every operation - human or machine - through the same pipeline: defaults, access, hooks, validation, serialize, adapter, populate. Because an agent enters through the exact same Local API and the exact same access engine, it inherits the exact same guarantees. No second authorization path to get wrong.
+
+## Why this matters now
+
+The auto-generated, typed, access-checked surface that already exists in every KernelCMS instance is one short step from a permissioned tool surface any agent can use. Payload is a CMS with an API. We want KernelCMS to be a content layer that agents and humans share - with one access model over both.
+
+Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---
+
+### Lean by default: why node:sqlite is the default database
+A fresh CMS should boot in seconds with nothing to compile. Here is the design rule that keeps the core tiny.
+
+The guiding rule of the whole codebase is simple: heavy or opinionated dependencies live behind optional adapters, never in `@kernel/core`. The lean default is the product.
+
+## node:sqlite, zero native deps
+
+The default database adapter is built on Node's own `node:sqlite`. No compile step, no `node-gyp`, no platform-specific binaries. A new project boots in seconds and a single file is your database. When you outgrow it, swap one line for Postgres, MySQL, or MongoDB.
+
+## Everything else is opt-in
+
+Image processing pulls in `sharp` - so it is a separate package you install only if you need it. Redis caching, S3 storage, OAuth: all adapters. The core stays native-dependency-free, which keeps installs fast and cold starts light.
+
+Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---
+
+### Migrations that do not scare you
+Diff-based, risk-classified, deterministic. How KernelCMS turns schema change from a chore into a preview.
+
+Schema migrations are where a lot of CMSs quietly fall apart. KernelCMS diffs your content model against the live database and produces a deterministic plan, classified by risk, that you can read before you run it.
+
+## Additive, so you can't lose data
+
+`kernel migrate` only creates tables and adds columns - it never drops or retypes. Destructive changes are reported, not silently applied.
+
+## Preview, then apply
+
+```
+npx kernel migrate:status # exactly what would change, and how risky
+npx kernel migrate # apply the additive plan
+```
+
+Because the plan is derived from your config, it is reproducible across environments - the same model always yields the same migration.
+
+Written by the KernelCMS team, based on each tool's official documentation and hands-on use of the software. *Last reviewed Jun 13, 2026.*
+
+---

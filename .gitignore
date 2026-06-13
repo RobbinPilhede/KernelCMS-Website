@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.vite/
+*.local
+.DS_Store
+Thumbs.db
+# temp verification artifacts
+_*.png
+_*.mjs

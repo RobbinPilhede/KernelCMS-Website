@@ -1,0 +1,64 @@
+# KernelCMS
+
+> KernelCMS is an open-source (MIT), TypeScript-native, config-as-code headless CMS. Model content in one kernel.config.ts and get a typed engine, auto-generated REST + GraphQL, a typed in-process Local API, a React admin, and a CLI. Database, storage, auth, email, cache, and search are swappable adapters. Runs on web standards with no framework lock-in; self-host on a single container. Developers own the model in code; non-technical editors change content with no code, with live preview and a page builder.
+
+Key facts:
+- License: MIT (core). Language: TypeScript, config-as-code.
+- No framework coupling - a web-standard Request → Response server that runs on Node, edge, or any container. (Unlike Payload 3, which runs inside Next.js.)
+- Default database is SQLite via Node's built-in node:sqlite (zero native dependencies). Also Postgres, MySQL, MongoDB.
+- Three APIs from one model: REST, GraphQL, and a typed in-process Local API - same access rules across all three.
+- Secure by default: deny-by-default access control, row-level filters, field-level redaction, and a privilege-escalation guard.
+- No-code editing for content teams: React admin, live preview, a blocks page builder, drafts, versions, scheduled publish.
+- Self-host and own your data (no SaaS lock-in, unlike Sanity/Contentful).
+
+## Documentation
+- [Introduction to KernelCMS](https://kernelcms.com/docs/introduction.html): KernelCMS is a config-as-code, end-to-end TypeScript headless CMS that never hijacks your framework.
+- [Installation](https://kernelcms.com/docs/installation.html): Requirements, the scaffolder, and what a KernelCMS project looks like on disk.
+- [Quickstart](https://kernelcms.com/docs/quickstart.html): A working CMS, an admin panel, and a typed REST + GraphQL API in three steps.
+- [Configuration & env](https://kernelcms.com/docs/configuration.html): How the config file is loaded, the rules type-stripping imposes, and every environment variable.
+- [Collections & globals](https://kernelcms.com/docs/collections.html): Collections are typed document types; globals are singletons. Both are defined as code.
+- [Field reference](https://kernelcms.com/docs/fields.html): Every field type and every option. This is the page you will return to most.
+- [Relationships & joins](https://kernelcms.com/docs/relationships.html): Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.
+- [Computed fields](https://kernelcms.com/docs/computed-fields.html): Derive a value in one place - virtual (on read) or stored (on write).
+- [Localization](https://kernelcms.com/docs/localization.html): Per-field translations with a configurable locale set and fallbacks.
+- [Access control](https://kernelcms.com/docs/access-control.html): Deny-by-default authorization at the collection and field level - booleans or row filters.
+- [Authentication](https://kernelcms.com/docs/authentication.html): Auth collections, sessions, API keys, password reset, email verification, 2FA, and OAuth.
+- [The Local API](https://kernelcms.com/docs/local-api.html): The same operations as REST, in-process, fully typed, with no HTTP round-trip.
+- [REST API](https://kernelcms.com/docs/rest-api.html): Auto-generated endpoints for every collection and global, access-checked end to end.
+- [Querying & the Where syntax](https://kernelcms.com/docs/querying.html): The operator set, sorting, pagination, and how default sort is resolved.
+- [GraphQL](https://kernelcms.com/docs/graphql.html): An auto-generated GraphQL endpoint over the same model and access rules.
+- [Lifecycle hooks](https://kernelcms.com/docs/hooks.html): Run logic at well-defined points in the operation pipeline.
+- [Custom endpoints](https://kernelcms.com/docs/custom-endpoints.html): Typed, validated, access-controlled HTTP handlers that extend the REST surface.
+- [Modules](https://kernelcms.com/docs/modules.html): Bundle a collection, endpoints, globals, and jobs into one installable, conflict-checked unit.
+- [Plugins](https://kernelcms.com/docs/plugins.html): Config transformers applied in dependency order - the lowest-level extension point.
+- [Background jobs](https://kernelcms.com/docs/background-jobs.html): Define handlers, enqueue work, and drain due jobs from a cron.
+- [Customizing the admin](https://kernelcms.com/docs/admin-customization.html): Register custom field inputs, list cells, and dashboard widgets - without forking the panel.
+- [Uploads & storage](https://kernelcms.com/docs/uploads-and-storage.html): Upload collections, storage adapters, image variants, and focal points.
+- [Versions & drafts](https://kernelcms.com/docs/versions-and-drafts.html): Version history, a draft/publish lifecycle, scheduled publishing, and autosave.
+- [Caching & search](https://kernelcms.com/docs/caching-and-search.html): Read-through caching and access-checked full-text search, both adapter-based.
+- [Webhooks](https://kernelcms.com/docs/webhooks.html): Fire signed HTTP POSTs when documents change.
+- [Migrations](https://kernelcms.com/docs/migrations.html): Diff-based, risk-classified, deterministic - and additive, so you cannot lose data by surprise.
+- [CLI reference](https://kernelcms.com/docs/cli.html): Every command and the flags they share.
+- [Deployment](https://kernelcms.com/docs/deployment.html): One container, anywhere - plus embedding the whole CMS inside another app.
+
+## Guides
+- [Add a Backend to Any Website (Including AI-Generated Sites)](https://kernelcms.com/guides/add-a-backend-to-any-site.html): A complete, copy-paste guide to giving any site - static HTML, Next.js, or an AI-generated page from v0, Lovable, Bolt, or Cursor - a real backend, CMS, database, and editable content with KernelCMS. Includes a ready-made AI prompt.
+- [Embed KernelCMS in Next.js](https://kernelcms.com/guides/embed-nextjs.html): Mount the full CMS - REST, GraphQL, and admin - inside an existing Next.js app behind a single route.
+- [Uploads & image variants](https://kernelcms.com/guides/uploads-images.html): Add S3 or R2 storage and auto-generate resized image variants with focal points.
+- [Password reset & two-factor](https://kernelcms.com/guides/auth-2fa.html): Turn on email password reset and TOTP two-factor with one config flag each.
+- [Add products & checkout](https://kernelcms.com/guides/commerce.html): The commerce module gives you products, orders, a server-side checkout, and signed Stripe webhooks.
+- [Deploy to a single container](https://kernelcms.com/guides/deploy-railway.html): One Dockerfile, one container, anywhere - with Postgres via DATABASE_URL.
+- [Custom admin field components](https://kernelcms.com/guides/custom-fields.html): Register custom field inputs, list cells, and dashboard widgets via window.KernelCMS.
+
+## Comparisons
+- [KernelCMS vs Payload: two code-first CMSs, one big difference](https://kernelcms.com/articles/kernelcms-vs-payload.html): They share a philosophy - TypeScript, config-as-code, a typed Local API, auto-generated REST and GraphQL. The real split is framework coupling: Payload 3 lives inside Next.js; KernelCMS runs on bare web standards.
+- [KernelCMS vs Sanity: own your data, or rent best-in-class editing](https://kernelcms.com/articles/kernelcms-vs-sanity.html): Sanity gives you real-time collaboration and a zero-ops hosted backend - at the cost of lock-in to the Content Lake and a usage-based bill. KernelCMS gives you the whole stack, self-hosted, MIT.
+- [KernelCMS vs Strapi: code-first vs admin-first modeling](https://kernelcms.com/articles/kernelcms-vs-strapi.html): Strapi models content in an admin UI and ships a huge plugin marketplace. KernelCMS models content in typed code you can review and version. The difference shows up the day your schema changes.
+- [KernelCMS vs Contentful: self-hosted code vs enterprise SaaS](https://kernelcms.com/articles/kernelcms-vs-contentful.html): Contentful is the enterprise API-first standard - global CDN, environments, SLAs. KernelCMS is the self-hosted, MIT, code-first alternative without the bill or the lock-in.
+- [KernelCMS vs Directus: config-first vs database-first](https://kernelcms.com/articles/kernelcms-vs-directus.html): Directus wraps an existing SQL database and gives you an instant API. KernelCMS defines the model in typed code and generates the database. Two philosophies - and a licensing difference worth knowing.
+- [The content layer agents and humans share](https://kernelcms.com/articles/agent-native-cms.html): Every company is wiring agents into their content. Almost nobody is doing it with a real permission model. Here is how KernelCMS treats an agent as a first-class, access-controlled actor.
+- [Lean by default: why node:sqlite is the default database](https://kernelcms.com/articles/lean-by-default.html): A fresh CMS should boot in seconds with nothing to compile. Here is the design rule that keeps the core tiny.
+- [Migrations that do not scare you](https://kernelcms.com/articles/migrations-that-dont-scare.html): Diff-based, risk-classified, deterministic. How KernelCMS turns schema change from a chore into a preview.
+
+## Full content
+- [Complete content as markdown](https://kernelcms.com/llms-full.txt): every doc, guide, and comparison in one file.
