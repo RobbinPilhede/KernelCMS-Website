@@ -1,15 +1,17 @@
 /* Record the animated demo scene (tools/demo-scene.html) to video files.
- * Produces assets/video/demo.webm and assets/video/walkthrough.webm.
+ * Produces public/assets/video/demo.webm and walkthrough.webm.
  *
- * Requires the dev server running (npx serve . -l 4321) so the scene + fonts load.
+ * Loads the scene over file:// (no server needed; fonts load from Google Fonts).
  * Run: node tools/record-demo.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, '..');
+const SCENE_URL = pathToFileURL(path.join(HERE, 'demo-scene.html')).href;
 const require = createRequire('C:/Users/robin/Desktop/KernelCMS/');
 const { chromium } = require('@playwright/test');
 
@@ -22,7 +24,7 @@ const SCENES = [
   { name: 'walkthrough', ms: 25000 },
 ];
 
-const outDir = path.join(ROOT, 'assets', 'video');
+const outDir = path.join(ROOT, 'public', 'assets', 'video');
 fs.mkdirSync(outDir, { recursive: true });
 const tmp = path.join(ROOT, 'tools', '.rec');
 fs.mkdirSync(tmp, { recursive: true });
@@ -31,7 +33,7 @@ const browser = await chromium.launch();
 for (const sc of SCENES) {
   const ctx = await browser.newContext({ viewport: SIZE, recordVideo: { dir: tmp, size: SIZE } });
   const page = await ctx.newPage();
-  await page.goto(`http://localhost:4321/tools/demo-scene.html?scene=${sc.name}`, { waitUntil: 'networkidle' });
+  await page.goto(`${SCENE_URL}?scene=${sc.name}`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__ready, { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(sc.ms);
   await ctx.close();

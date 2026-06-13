@@ -43,35 +43,29 @@
       .mk { display: inline-block; }
       .mk path { fill: url(#mg); }
 
-      /* ---------- CHAT ---------- */
-      .chat { width: 760px; }
-      .chat .head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--muted); font-size: 14px; }
-      .chat .head .mk { width: 20px; height: 20px; }
-      .msg { display: flex; margin-bottom: 14px; }
-      .bub { max-width: 78%; padding: 14px 18px; border-radius: 16px; font-size: 17px; line-height: 1.5; opacity: 0; }
-      .act.show .bub { animation: rise .55s var(--e) both; }
-      .msg.user { justify-content: flex-end; }
-      .msg.user .bub { background: #26262c; border: 1px solid var(--border); border-bottom-right-radius: 5px; }
-      .msg.ai .bub { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 5px; }
-      .msg.user .bub { animation-delay: .25s; }
-      .typing { display: inline-flex; gap: 5px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; border-bottom-left-radius: 5px; opacity: 0; }
-      .act.show .typing { animation: rise .4s var(--e) both, fadeout .3s ease 2.0s forwards; animation-delay: 1.2s; }
-      .typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); animation: bounce 1.2s infinite; }
-      .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
-      @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:.5} 30%{transform:translateY(-5px);opacity:1} }
-      .msg.ai .bub { animation-delay: 2.3s; }
-      .codecard { margin-top: 12px; background: #121317; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; opacity: 0; }
-      .act.show .codecard { animation: rise .5s var(--e) both; animation-delay: 3.0s; }
-      .codecard .cbar { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface2); }
-      .codecard .cbar i { width: 10px; height: 10px; border-radius: 50%; background: #3a3d44; }
-      .codecard .cbar i:nth-child(1){background:#ff5f57}.codecard .cbar i:nth-child(2){background:#febc2e}.codecard .cbar i:nth-child(3){background:#28c840}
-      .codecard .cbar span { margin-left: 8px; font-family: var(--mono); font-size: 12px; color: var(--faint); }
-      .codecard pre { padding: 16px 18px; font-family: var(--mono); font-size: 14.5px; line-height: 1.7; }
-      .codecard .ln { opacity: 0; }
-      .act.show .codecard .ln { animation: typein .3s var(--e) both; }
-      .act.show .codecard .ln:nth-child(1){animation-delay:3.3s}.act.show .codecard .ln:nth-child(2){animation-delay:3.5s}
-      .act.show .codecard .ln:nth-child(3){animation-delay:3.7s}.act.show .codecard .ln:nth-child(4){animation-delay:3.9s}
-      .act.show .codecard .ln:nth-child(5){animation-delay:4.1s}.act.show .codecard .ln:nth-child(6){animation-delay:4.3s}
+      /* ---------- CLAUDE CODE ---------- */
+      .cc { width: 840px; background: #0d0e11; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 40px 90px -50px #000; }
+      .cc-bar { display: flex; align-items: center; gap: 10px; padding: 13px 18px; background: var(--surface2); border-bottom: 1px solid var(--border); font-size: 15px; color: var(--text); }
+      .cc-bar .spark { color: #d97757; font-size: 18px; line-height: 1; }
+      .cc-bar .cwd { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--faint); }
+      .cc-stream { padding: 22px 24px; font-family: var(--mono); font-size: 14.5px; line-height: 1.7; }
+      .cc-prompt { display: flex; gap: 11px; padding: 15px 17px; border-radius: 10px; background: rgba(255,255,255,.035); border: 1px solid var(--border); opacity: 0; }
+      .act.show .cc-prompt { animation: rise .5s var(--e) both .2s; }
+      .cc-prompt .caret { color: #d97757; flex: none; }
+      .cc-prompt .pasted { color: var(--muted); }
+      .cc-prompt .pasted b { color: var(--text); }
+      .cc-reply { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+      .cc-reply > div { opacity: 0; }
+      .act.show .cc-reply > div { animation: typein .3s var(--e) both; }
+      .act.show .cc-reply > div:nth-child(1){animation-delay:1.5s}.act.show .cc-reply > div:nth-child(2){animation-delay:2.0s}
+      .act.show .cc-reply > div:nth-child(3){animation-delay:2.6s}.act.show .cc-reply > div:nth-child(4){animation-delay:3.2s}
+      .act.show .cc-reply > div:nth-child(5){animation-delay:3.8s}.act.show .cc-reply > div:nth-child(6){animation-delay:4.5s}
+      .cc-think { color: var(--muted); }
+      .cc-think .dot, .cc-tool .ok { color: #d97757; }
+      .cc-tool .ok { color: var(--ok); }
+      .cc-tool { color: var(--text); }
+      .cc-tool b { color: #88b6f5; font-weight: 400; }
+      .cc-done { color: var(--ok); margin-top: 8px; }
       .k{color:#c4a6f5}.s{color:#7ad9b0}.p{color:var(--muted)}.f{color:#88b6f5}.n{color:#f0c070}
 
       /* ---------- TERMINAL ---------- */
@@ -198,15 +192,19 @@
         <div class="down r3">So you ask your AI for help &darr;</div>
       </div></div>
 
-      <!-- CHAT -->
-      <div class="act" id="act-chat"><div class="chat">
-        <div class="head"><span class="mk" data-mk></span> AI assistant</div>
-        <div class="msg user"><div class="bub">i built a bakery site with AI but i can't edit the text or add new cakes 😩 can you give it a backend?</div></div>
-        <div class="msg ai" style="position:relative;height:54px"><div class="typing"><i></i><i></i><i></i></div></div>
-        <div class="msg ai"><div class="bub">On it. I'll add <b>KernelCMS</b> &mdash; a backend, an admin panel, and an API. Here is your config:</div></div>
-        <div class="codecard">
-          <div class="cbar"><i></i><i></i><i></i><span>kernel.config.ts</span></div>
-          <pre><div class="ln"><span class="k">export default</span> <span class="f">defineConfig</span><span class="p">({ collections: [</span></div><div class="ln"><span class="p">&nbsp;&nbsp;{ slug: </span><span class="s">'cakes'</span><span class="p">, access: { read: () </span><span class="k">=&gt;</span><span class="p"> </span><span class="k">true</span><span class="p"> },</span></div><div class="ln"><span class="p">&nbsp;&nbsp;&nbsp;&nbsp;fields: [</span></div><div class="ln"><span class="p">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ name: </span><span class="s">'name'</span><span class="p">, type: </span><span class="s">'text'</span><span class="p"> },</span></div><div class="ln"><span class="p">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{ name: </span><span class="s">'price'</span><span class="p">, type: </span><span class="s">'number'</span><span class="p"> },</span></div><div class="ln"><span class="p">&nbsp;&nbsp;] }] })</span></div></pre>
+      <!-- CLAUDE CODE: paste the ready-made prompt, Claude does the work -->
+      <div class="act" id="act-chat"><div class="cc">
+        <div class="cc-bar"><span class="spark">&#10038;</span> Claude Code <span class="cwd">~/bakery-site</span></div>
+        <div class="cc-stream">
+          <div class="cc-prompt"><span class="caret">&gt;</span> <span class="pasted">You are adding a backend to my website using <b>KernelCMS</b>. Read kernelcms.com/llms-full.txt, then model my content, create <b>kernel.config.ts</b>, install it, and wire my frontend to the API. Don't change my design.</span></div>
+          <div class="cc-reply">
+            <div class="cc-think"><span class="dot">&#9679;</span> Read <b style="color:#88b6f5">kernelcms.com/llms-full.txt</b></div>
+            <div class="cc-think"><span class="dot">&#9679;</span> Found editable content: a hero and a list of cakes</div>
+            <div class="cc-tool"><span class="ok">&#10003;</span> Created <b>kernel.config.ts</b> &middot; collection <b>cakes</b> { name, price, photo }</div>
+            <div class="cc-tool"><span class="ok">&#10003;</span> Ran <b>npm install kernelcms</b></div>
+            <div class="cc-tool"><span class="ok">&#10003;</span> Wired your frontend to <b>/api/cakes</b></div>
+            <div class="cc-done">Done. Your site now has a database, an API, and a no-code admin. Edit it at /admin.</div>
+          </div>
         </div>
       </div></div>
 

@@ -113,7 +113,7 @@ export function Footer() {
           {col('Product', [['Features', L('/')], ['Docs', L('/docs')], ['Guides', L('/guides')], ['Quickstart', L('/docs/$slug', { slug: 'quickstart' })]])}
           {col('Resources', [['Blog', L('/blog')], ['Changelog', L('/changelog')], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
           {col('Company', [['About', L('/about')], ['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
-          {col('Community', [['GitHub', GITHUB], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
+          {col('Community', [['GitHub', GITHUB], ['Safety', L('/safety')], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
         </div>
         <div className="flex items-center justify-between gap-4 mt-12 pt-6 border-t border-[var(--border)] text-[var(--faint)] text-[13px] flex-wrap">
           <span>© 2026 KernelCMS · MIT licensed core</span><span>Built on web standards · Runs on Node, edge, any container</span>
@@ -238,8 +238,8 @@ export function NpmStats({ pkg = 'kernelcms' }: { pkg?: string }) {
   return (
     <div className={`${card} flex items-stretch flex-wrap divide-x divide-[var(--border)] max-[680px]:divide-x-0 max-[680px]:divide-y`}>
       <div className={`${cell} justify-center !gap-2`}>{live}<span className="font-[family-name:var(--mono)] text-sm text-[var(--text)]">{pkg}{d?.version ? <span className="text-[var(--muted)]"> v{d.version}</span> : null}</span></div>
-      <div className={cell}><span className={label}>Weekly installs</span><span className={num}>{d?.weekly != null ? <CountUp to={d.weekly} /> : '—'}</span></div>
-      <div className={cell}><span className={label}>Downloads / year</span><span className={num}>{d?.total != null ? <CountUp to={d.total} /> : '—'}</span></div>
+      <div className={cell}><span className={label}>Weekly installs</span><span className={num}>{d?.weekly != null ? <CountUp to={d.weekly} /> : '-'}</span></div>
+      <div className={cell}><span className={label}>Downloads / year</span><span className={num}>{d?.total != null ? <CountUp to={d.total} /> : '-'}</span></div>
       <div className={cell}><span className={label}>License</span><span className={num}>MIT</span></div>
     </div>
   )

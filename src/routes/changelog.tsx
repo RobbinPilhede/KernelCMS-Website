@@ -43,7 +43,7 @@ const RELEASES = [
     summary: 'The first release: the typed content engine and three APIs.',
     changes: [
       { type: 'Added', items: [
-        'Config-as-code content modeling — collections, globals, and 20+ field types — with full type inference',
+        'Config-as-code content modeling - collections, globals, and 20+ field types - with full type inference',
         'Auto-generated REST and GraphQL APIs plus a typed in-process Local API, all over one access pipeline',
         'Deny-by-default access control with boolean or row-level rules, plus a privilege-escalation guard',
         'Database adapters: SQLite (node:sqlite, zero native deps), PostgreSQL, MySQL, and MongoDB',
@@ -62,7 +62,7 @@ const TAG: Record<string, string> = {
 }
 
 function Changelog() {
-  useHead('Changelog — KernelCMS', 'Release notes for KernelCMS: every version, what was added, improved, and fixed.')
+  useHead('Changelog - KernelCMS', 'Release notes for KernelCMS: every version, what was added, improved, and fixed.')
   const wrap = 'w-full max-w-[820px] mx-auto px-[clamp(18px,4vw,36px)]'
   return (
     <main><section className="pt-[clamp(48px,7vw,88px)] pb-[clamp(56px,9vw,110px)]"><div className={wrap}>
