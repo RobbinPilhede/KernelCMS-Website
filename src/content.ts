@@ -619,6 +619,117 @@ kernel://collections/<slug>        # one collection's fields and labels`)}
 <h2 id="install">Install</h2>
 ${note(`Import from <code>kernelcms/mcp</code>. The <code>@modelcontextprotocol/sdk</code> is an <strong>optional peer dependency</strong> - it is loaded lazily only when you run <code>kernel mcp</code>, so the base install stays lean. If it is missing, the CLI tells you to install it: <code>npm install @modelcontextprotocol/sdk</code>.`)}`
     },
+    {
+      slug: 'agentic-workflows', group: 'Access & auth', nav: 'Agentic workflows', title: 'Agentic workflows',
+      lead: 'Hand a job to an AI agent and let it run a multi-step content pipeline - draft, quality gate, human review - without it ever being able to push something live.',
+      html: `
+<p>This is the <em>agentic CMS</em>: autonomous content pipelines with hard guardrails baked into the engine. A <strong>workflow</strong> is orchestration plus guardrails. KernelCMS schedules the steps, pins every operation to a <a href="#/docs/mcp">scoped agent principal</a>, records a durable run log, and gates content advancement on quality checks and human approval. The actual generation - the LLM call that writes the draft - is <strong>your</strong> code inside a step. KernelCMS never calls a model for you; it makes sure that whatever the model produces cannot go live unchecked.</p>
+
+<h2 id="concept">Autonomous, but governed</h2>
+<p>A normal automation runs as a trusted system caller - it can write anything, publish anything. That is exactly what you do <em>not</em> want when an LLM is in the loop. A KernelCMS workflow inverts it: every step runs as the workflow's scoped agent, never as a system caller. The agent physically <strong>cannot publish</strong> and <strong>cannot write outside its <code>fieldScope</code></strong>, and there is no <code>overrideAccess</code> anywhere on the path. Content moves forward <strong>only</strong> through two explicit gates - <code>evalGate</code> (your quality CI) and <code>requestReview</code> (a human approving in the inbox).</p>
+
+<h2 id="define">Defining a workflow</h2>
+<p>Workflows live on your config under <code>workflows</code>. A definition names a <code>slug</code> (snake_case), the <code>agent</code> to run as, an optional <code>trigger</code>, and the ordered <code>steps</code>:</p>
+${code('ts', `export default defineConfig({
+  agents: [
+    {
+      id: 'writer',
+      token: process.env.WRITER_TOKEN,            // bearer credential, from env
+      roles: ['editor'],
+      fieldScope: { allow: ['title', 'body', 'excerpt'] }, // deny-by-default
+    },
+  ],
+  workflows: [
+    {
+      slug: 'draft_from_brief',
+      agent: 'writer',                            // every step runs as this principal
+      trigger: { on: 'create', collection: 'briefs' },
+      maxAttempts: 3,
+      steps: [
+        {
+          name: 'draft',
+          async run(ctx) {
+            // ctx.input is the brief that triggered the run.
+            const body = await generateWithYourLLM(ctx.input.brief)
+
+            // A DRAFT - the agent principal cannot create a published doc.
+            const post = await ctx.kernel.create({
+              collection: 'posts',
+              data: { title: ctx.input.title, body },
+            })
+            ctx.log(\`drafted post \${post.id}\`)
+
+            // Quality CI. Runs the collection's evals; THROWS -> the run fails.
+            await ctx.evalGate({ collection: 'posts', id: post.id })
+
+            // Pause the run as awaiting_review; a human approves in the inbox.
+            await ctx.requestReview({ collection: 'posts', id: post.id }, 'ready for review')
+          },
+        },
+      ],
+    },
+  ],
+})`)}
+<p>A new <code>brief</code> fires this workflow, the agent drafts a <code>posts</code> document, the draft must pass your evals, and then it parks in the review inbox for a human. At no point could the agent publish.</p>
+
+<h2 id="context">The WorkflowContext &amp; the two gates</h2>
+<p>Each step's <code>run(ctx)</code> receives a <code>WorkflowContext</code>:</p>
+<ul>
+<li><strong><code>ctx.kernel</code></strong> - a Local-API subset (<code>find</code>, <code>findByID</code>, <code>create</code>, <code>update</code>, <code>delete</code>, <code>count</code>, <code>composePage</code>, <code>findVersions</code>) where every call is <strong>pinned to the scoped agent principal</strong>. A step cannot pass <code>overrideAccess</code> or swap in a different principal.</li>
+<li><strong><code>ctx.input</code></strong> - the trigger document on a create/update run, or the manual input passed to <code>runWorkflow</code>.</li>
+<li><strong><code>ctx.log(msg)</code></strong> - append a line to the run log; <strong><code>ctx.step</code></strong> - <code>{ name, index }</code> for the current step.</li>
+</ul>
+<p>Content advancement is not something a step does by writing data. It happens only through these two awaited calls:</p>
+${code('ts', `// Quality CI: runs the collection's configured evals against the doc.
+// A blocking eval failure THROWS, which fails the run - the draft does not advance.
+await ctx.evalGate({ collection: 'posts', id })
+
+// Submits the doc to the review inbox and PAUSES the run as awaiting_review.
+await ctx.requestReview({ collection: 'posts', id }, 'optional note for the reviewer')`)}
+${note(`The engine does <strong>not</strong> block-wait for a person. <code>requestReview</code> pauses the run as <code>awaiting_review</code> and returns. The human then approves the doc in the inbox, and <strong>that</strong> inbox-approval path is what publishes it.`)}
+
+<h2 id="triggers">Triggers, manual runs &amp; durable execution</h2>
+<p><strong>Triggered runs</strong> (<code>on: 'create'</code> / <code>'update'</code>) enqueue a <strong>durable</strong> run onto the <a href="#/docs/background-jobs">background jobs</a> queue when a matching document is written - they never run inline with the content write, so a slow agent step never blocks the editor saving. The queued run is drained by your jobs runner:</p>
+${code('bash', `kernel jobs:run        # drain due jobs once (drive it from a cron)`)}
+<p><strong>Manual runs</strong> (<code>on: 'manual'</code>, or no trigger) never fire on a write - you start them explicitly. <code>runWorkflow</code> executes the steps <strong>inline</strong> and returns the resulting run:</p>
+${code('ts', `const run = await kernel.runWorkflow({ slug: 'draft_from_brief', input, req })`)}
+
+<h2 id="runs">The run log &amp; REST routes</h2>
+<p>Every run is durable and inspectable. <code>_workflow_runs</code> records the run plus per-step status and errors - stored as <strong>messages only</strong>, never stack traces, never secrets.</p>
+${code('ts', `const { docs } = await kernel.workflowRuns({
+  slug: 'draft_from_brief',
+  status: 'awaiting_review',
+  limit: 20,
+  page: 1,
+})`)}
+<p>The same surface is exposed over REST, gated to admin/editor callers:</p>
+${code('http', `GET  /api/_admin/workflow-runs?slug=draft_from_brief&status=awaiting_review
+POST /api/_admin/workflows/draft_from_brief/run`)}
+<p>Decisions are recorded for audit on every outcome: <code>workflow.completed</code>, <code>workflow.failed</code>, and <code>workflow.awaiting_review</code>.</p>
+
+<h2 id="states">The run-state machine</h2>
+${code('text', `pending -> running -> completed
+                  |-> failed
+                  \\-> awaiting_review`)}
+<ul>
+<li><strong>pending</strong> - enqueued (a triggered run waiting for the jobs runner).</li>
+<li><strong>running</strong> - steps are executing.</li>
+<li><strong>completed</strong> - every step finished without a gate pausing or failing it.</li>
+<li><strong>failed</strong> - a step threw (including a blocking <code>evalGate</code>); the per-step error message is recorded and <code>maxAttempts</code> governs retries.</li>
+<li><strong>awaiting_review</strong> - a step called <code>requestReview</code> and parked the run. A human approval (which publishes) closes the loop outside the workflow.</li>
+</ul>
+
+<h2 id="guarantees">The guardrail guarantees</h2>
+<p>These hold because they are enforced by <code>@kernel/core</code>, not by the workflow code you write:</p>
+${warn(`<ul>
+<li><strong>Scoped principal.</strong> Every step runs as the workflow's agent; <code>ctx.kernel</code> is pinned to it - no <code>overrideAccess</code>, no swapping principals.</li>
+<li><strong>Draft-only.</strong> The agent physically cannot publish - a born-published create, a <code>_status: 'published'</code> write, a <code>publish()</code>, or scheduling are all rejected. Publishing stays a human decision.</li>
+<li><strong>Field-scoped.</strong> Writes are limited to the agent's <code>fieldScope.allow</code> (deny-by-default); an agent scoped to <code>['title', 'body']</code> cannot touch <code>roles</code>, whatever a step tries.</li>
+<li><strong>Gates are the only advancement.</strong> A draft reaches the public read path only after <code>evalGate</code> passes <em>and</em> a human approves in the inbox. KernelCMS orchestrates and guards; the generation is your agent/LLM, and the publish is the human's approval.</li>
+<li><strong>Loop-guarded.</strong> An agent's own write into its trigger collection will not re-fire the workflow.</li>
+</ul>`)}
+${tip(`The net effect: you can point a capable, autonomous agent at your content and trust that nothing it produces goes live unchecked. Workflows build on agent principals, the review inbox, content-CI evals, and the jobs system.`)}`
+    },
 
     // ---- Data & APIs --------------------------------------------------------
     {
