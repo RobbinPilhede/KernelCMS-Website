@@ -131,6 +131,76 @@ const ENDPOINT = `defineEndpoint({
   handler: async ({ input, ctx }) => { /* … */ },
 })`
 
+// ── Compose a page: the blocks array an agent writes ──────────────────────
+// A real pages_update payload - blockType picked from the site's own library,
+// ordered, with each block's fields filled. Still lands as a draft.
+const COMPOSE = `pages_update({
+  id: "launch-0-5",
+  // 'blocks' is a normal field - so the agent designs the
+  // whole page by composing your section library, in order.
+  layout: [
+    { blockType: "hero",
+      eyebrow: "Release 0.5",
+      heading: "Field scoping, now per-agent.",
+      sub: "Draft freely. Publishing stays yours." },
+    { blockType: "feature_grid",
+      columns: 3,
+      items: [
+        { title: "Per-agent scope", body: "…" },
+        { title: "Draft-only brake", body: "…" },
+        { title: "One pipeline",     body: "…" },
+      ] },
+    { blockType: "cta",
+      label: "Read the 0.5 notes",
+      href: "/changelog" },
+  ],
+})`
+
+// The composed page, as stacked section cards - block types map to the
+// library slugs above, rendered with the site's own tokens.
+const COMPOSED: { type: string; el: React.ReactNode }[] = [
+  {
+    type: 'hero',
+    el: (
+      <div className="px-[clamp(16px,3vw,28px)] py-[clamp(18px,3.5vw,30px)] text-center">
+        <p className="font-[family-name:var(--mono)] text-[10.5px] tracking-[0.14em] uppercase text-[var(--faint)] m-0">Release 0.5</p>
+        <p className="text-[clamp(1.05rem,0.9rem+0.7vw,1.45rem)] font-semibold tracking-[-0.02em] mt-[10px] mb-0 text-balance">Field scoping, now per-agent.</p>
+        <p className="text-[12.5px] text-[var(--muted)] mt-[7px] mb-0">Draft freely. Publishing stays yours.</p>
+        <span className="inline-flex mt-[14px] items-center font-[family-name:var(--mono)] text-[11px] text-[var(--faint)] border border-[var(--border)] rounded-full px-[11px] py-[4px]">hero</span>
+      </div>
+    ),
+  },
+  {
+    type: 'feature_grid',
+    el: (
+      <div className="px-[clamp(14px,2.5vw,22px)] py-[clamp(16px,3vw,22px)]">
+        <div className="grid grid-cols-3 gap-[10px] max-[420px]:grid-cols-1">
+          {['Per-agent scope', 'Draft-only brake', 'One pipeline'].map((t) => (
+            <div key={t} className="rounded-[9px] border border-[var(--border)] bg-[var(--surface)] p-[12px]">
+              <span className="grid place-items-center w-7 h-7 rounded-[8px] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] [&_svg]:w-[15px] [&_svg]:h-[15px]"><Icon name="check" /></span>
+              <p className="text-[12.5px] font-semibold mt-[9px] mb-[5px] leading-[1.25]">{t}</p>
+              <p className="text-[11px] text-[var(--muted)] leading-[1.45] m-0">Three columns, each an item in the block's <span className="font-[family-name:var(--mono)]">items</span> array.</p>
+            </div>
+          ))}
+        </div>
+        <span className="inline-flex mt-[12px] items-center font-[family-name:var(--mono)] text-[11px] text-[var(--faint)] border border-[var(--border)] rounded-full px-[11px] py-[4px]">feature_grid</span>
+      </div>
+    ),
+  },
+  {
+    type: 'cta',
+    el: (
+      <div className="px-[clamp(16px,3vw,28px)] py-[clamp(16px,3vw,22px)] flex items-center gap-3 justify-between flex-wrap">
+        <div>
+          <p className="text-[13px] font-semibold m-0">Ship the 0.5 release page.</p>
+          <p className="text-[11.5px] text-[var(--muted)] mt-[3px] mb-0">A real call-to-action block, fields filled.</p>
+        </div>
+        <span className="inline-flex items-center gap-[6px] font-[family-name:var(--mono)] text-[11.5px] text-[var(--text)] border border-[var(--border)] rounded-[8px] px-[12px] py-[7px] [&_svg]:w-[13px] [&_svg]:h-[13px]">Read the 0.5 notes <Icon name="arrow" /></span>
+      </div>
+    ),
+  },
+]
+
 // ── Deep-dive prose (the longer-form argument; code moved into bespoke
 // sections above is not repeated here). ───────────────────────────────────
 const BODY = `
@@ -398,6 +468,105 @@ function Mcp() {
               <Code src={ENDPOINT} lang="ts" />
             </div>
           </div>
+        </div>
+      </div></section>
+
+      {/* ── COMPOSE PAGES: agent designs whole sections via the blocks field ── */}
+      <section className="py-[clamp(40px,6vw,80px)]"><div className={wrap}>
+        <div className="max-w-[720px] mb-[clamp(28px,4vw,44px)]">
+          <Eyebrow>not just edits — whole pages</Eyebrow>
+          <h2 className={sectionTitle}>Agents that compose, not just fill in.</h2>
+          <p className="text-[var(--muted)] text-base mt-3 max-w-[62ch] text-pretty">
+            Your page builder is a field. The <code className={inlineCode}>blocks</code> field stores a typed array of
+            <code className={inlineCode}> {`{ blockType, …fields }`}</code> drawn from <Link className="text-[var(--text)] underline underline-offset-[3px] decoration-[var(--border)] hover:decoration-[var(--text)]" to="/docs/$slug" params={{ slug: 'fields' }}>your own section library</Link>. So an agent
+            whose <code className={inlineCode}>fieldScope.allow</code> includes it doesn't just edit copy — it writes the whole array in one
+            ordinary <code className={inlineCode}>_update</code>, <span className="text-[var(--text)]">choosing the sections, ordering them, and filling each block's fields.</span> It designs the layout.
+          </p>
+        </div>
+
+        {/* Flow: intent → tool call → composed page */}
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] gap-[clamp(20px,3vw,40px)] items-start max-[940px]:grid-cols-1">
+          {/* LEFT: the intent, then the tool call it becomes */}
+          <div className="flex flex-col gap-[clamp(14px,2vw,20px)]">
+            {/* Natural-language intent */}
+            <div className={`${card} bg-[var(--surface-2)]`}>
+              <div className="flex items-center gap-2 px-4 py-[10px] border-b border-[var(--border)] bg-[var(--surface)]">
+                <span className="grid place-items-center w-5 h-5 text-[var(--text)] [&_svg]:w-[15px] [&_svg]:h-[15px]"><Icon name="sparkles" /></span>
+                <span className="font-[family-name:var(--mono)] text-[12px] text-[var(--faint)]">intent · plain language</span>
+              </div>
+              <div className="px-[clamp(16px,2.5vw,22px)] py-[clamp(14px,2.5vw,18px)]">
+                <p className="text-[15px] leading-[1.5] m-0 text-pretty">
+                  <span className="text-[var(--faint)] font-[family-name:var(--mono)] mr-[6px]">&ldquo;</span>
+                  Draft a launch page for the 0.5 release — a hero, three feature columns, and a call to action.
+                  <span className="text-[var(--faint)] font-[family-name:var(--mono)] ml-[2px]">&rdquo;</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Arrow seam */}
+            <div className="flex items-center gap-3 px-1 -my-[2px]" aria-hidden="true">
+              <span className="h-px flex-1 bg-[var(--border)]" />
+              <span className="inline-flex items-center gap-[6px] font-[family-name:var(--mono)] text-[11.5px] text-[var(--muted)] [&_svg]:w-[14px] [&_svg]:h-[14px] [&_svg]:rotate-90">composes <Icon name="arrow" /></span>
+              <span className="h-px flex-1 bg-[var(--border)]" />
+            </div>
+
+            {/* The tool call: a real pages_update writing the blocks array */}
+            <div className={`${card} bg-[var(--surface-2)] shadow-[0_30px_80px_-52px_rgba(0,0,0,0.5)]`}>
+              <div className="flex items-center justify-between gap-2 px-4 py-[10px] border-b border-[var(--border)] bg-[var(--surface)]">
+                <span className="flex items-center gap-2">
+                  <Icon name="terminal" /><span className="font-[family-name:var(--mono)] text-[12px] text-[var(--faint)]">tool call · pages_update</span>
+                </span>
+                <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--ok)] px-[7px] py-[2px] rounded-full border border-[color-mix(in_srgb,var(--ok)_38%,var(--border))] bg-[color-mix(in_srgb,var(--ok)_8%,transparent)] [&_svg]:w-[12px] [&_svg]:h-[12px]"><Icon name="check" /> draft</span>
+              </div>
+              <div className="p-[clamp(16px,2.5vw,20px)] overflow-x-auto [&_code]:font-[family-name:var(--mono)] [&_code]:text-[12px] [&_code]:leading-[1.65] [&_code]:whitespace-pre">
+                <Code src={COMPOSE} lang="ts" />
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: the composed page, as stacked section cards */}
+          <div className="min-[940px]:sticky min-[940px]:top-[90px]">
+            <div className="flex items-center gap-2 mb-[10px] font-[family-name:var(--mono)] text-[12px] text-[var(--faint)]">
+              <span className="grid place-items-center w-5 h-5 text-[var(--text)] [&_svg]:w-[15px] [&_svg]:h-[15px]"><Icon name="layers" /></span>
+              composed page · /launch-0-5
+            </div>
+            {/* Browser-chrome frame around the rendered sections */}
+            <div className={`${card} bg-[var(--surface)] shadow-[0_30px_80px_-50px_rgba(0,0,0,0.6)]`}>
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] bg-[var(--surface-2)]">
+                <span className="w-[10px] h-[10px] rounded-full bg-[color-mix(in_srgb,var(--text)_14%,transparent)]" />
+                <span className="w-[10px] h-[10px] rounded-full bg-[color-mix(in_srgb,var(--text)_14%,transparent)]" />
+                <span className="w-[10px] h-[10px] rounded-full bg-[color-mix(in_srgb,var(--text)_14%,transparent)]" />
+                <span className="ml-3 inline-flex items-center gap-[6px] font-[family-name:var(--mono)] text-[11px] text-[var(--faint)] truncate">
+                  <span className="inline-flex w-[6px] h-[6px] rounded-full bg-[color-mix(in_srgb,var(--text)_22%,transparent)]" /> draft preview
+                </span>
+              </div>
+              <div className="p-[clamp(12px,2vw,18px)] flex flex-col gap-[clamp(10px,1.6vw,14px)] bg-[color-mix(in_srgb,var(--text)_2%,var(--surface))]">
+                {COMPOSED.map(({ type, el }) => (
+                  <div key={type} className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+                    {el}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-[12px] text-[var(--faint)] mt-[10px] font-[family-name:var(--mono)] leading-[1.5]">
+              <span aria-hidden="true">↑</span> each card is one block from your library, in the order the agent chose.
+            </p>
+          </div>
+        </div>
+
+        {/* The guardrails note — ties back to the leash */}
+        <div className="mt-[clamp(24px,4vw,40px)] grid grid-cols-3 gap-[clamp(12px,2vw,18px)] max-[760px]:grid-cols-1">
+          {[
+            ['layers', 'Real types only', <>Every entry must be a <code className={inlineCode}>blockType</code> from your library; unknown blocks and bad fields fail validation before anything is written.</>],
+            ['shield', 'Scope still holds', <>It can only compose with fields inside its <code className={inlineCode}>fieldScope.allow</code>. The same deny-by-default brake that guards a single field guards the whole array.</>],
+            ['lock', 'Still a draft', <>The composed page lands as a <code className={inlineCode}>draft</code> — the agent designs freely, but a human reviews and publishes. The leash doesn't loosen for layouts.</>],
+          ].map(([icon, title, body]: any) => (
+            <div key={title} className="flex flex-col gap-[10px] p-[clamp(16px,2.5vw,20px)] border border-[var(--border)] rounded-[14px] bg-[var(--surface)]">
+              <span className="grid place-items-center w-9 h-9 rounded-[10px] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] [&_svg]:w-[18px] [&_svg]:h-[18px]"><Icon name={icon} /></span>
+              <h3 className="text-[14.5px] font-semibold leading-[1.25] m-0">{title}</h3>
+              <p className="text-[var(--muted)] text-[12.5px] leading-[1.5] m-0 text-pretty">{body}</p>
+            </div>
+          ))}
         </div>
       </div></section>
 
