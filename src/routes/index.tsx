@@ -4,7 +4,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { highlight } from '../lib'
 import { HOME_SEO } from '../content'
-import { Icon, DemoPlayer, useHead } from '../ui'
+import { Icon, DemoPlayer, NpmStats, useHead } from '../ui'
 import { btn, btnPrimary, btnGhost } from '../cls'
 
 export const Route = createFileRoute('/')({ component: Home })
@@ -115,6 +115,11 @@ function Home() {
           <p className="mt-7 font-[family-name:var(--mono)] text-[12.5px] text-[var(--faint)]">Open-source (MIT) · TypeScript · works with any frontend or AI-generated site</p>
         </div>
         <div><DemoPlayer url="localhost:3000/admin" caption="See how easy it is" base="demo" autoplay /></div>
+      </div></section>
+
+      {/* LIVE NPM STATS */}
+      <section className="pb-[clamp(16px,3vw,40px)] -mt-2"><div className={wrap}>
+        <NpmStats pkg="kernelcms" />
       </div></section>
 
       {/* STEPS */}

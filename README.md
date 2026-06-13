@@ -2,7 +2,11 @@
   <img alt="KernelCMS" src="public/brand/kernelcms-logo.svg" width="360" />
 </p>
 
-<p align="center"><strong>The marketing, documentation, and blog site for KernelCMS — kernelcms.com</strong></p>
+<p align="center"><strong>The marketing, documentation, and blog site for KernelCMS</strong></p>
+
+<p align="center">
+  <a href="https://kernelcms.com/"><strong>🌐 kernelcms.com</strong></a>
+</p>
 
 <p align="center">
   Built with <a href="https://tanstack.com/router">TanStack Router</a> · Vite · React 19 · 100% TypeScript

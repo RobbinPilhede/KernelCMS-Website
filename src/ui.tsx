@@ -63,6 +63,7 @@ export function Topbar() {
           <Link to="/docs" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Docs</Link>
           <Link to="/guides" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Guides</Link>
           <Link to="/blog" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Blog</Link>
+          <Link to="/about" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>About</Link>
         </nav>
         <div className="flex-1" />
         <div className="flex items-center gap-[10px]">
@@ -110,8 +111,8 @@ export function Footer() {
         <div className="grid grid-cols-[1.6fr_repeat(4,1fr)] gap-10 max-[920px]:grid-cols-2 max-[920px]:gap-8">
           <div className="max-[920px]:col-span-full"><Logo /><p className="text-[var(--muted)] text-sm max-w-[30ch] mt-4">The lightweight, standalone, type-safe headless CMS that does not hijack your framework.</p></div>
           {col('Product', [['Features', L('/')], ['Docs', L('/docs')], ['Guides', L('/guides')], ['Quickstart', L('/docs/$slug', { slug: 'quickstart' })]])}
-          {col('Resources', [['Blog', L('/blog')], ['Adapters', L('/docs/$slug', { slug: 'adapters' })], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
-          {col('Develop', [['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Migrations', L('/docs/$slug', { slug: 'migrations' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
+          {col('Resources', [['Blog', L('/blog')], ['Changelog', L('/changelog')], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
+          {col('Company', [['About', L('/about')], ['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
           {col('Community', [['GitHub', GITHUB], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
         </div>
         <div className="flex items-center justify-between gap-4 mt-12 pt-6 border-t border-[var(--border)] text-[var(--faint)] text-[13px] flex-wrap">
@@ -166,6 +167,80 @@ export function DemoPlayer({ url, caption, base, autoplay }: { url: string; capt
           <div className="demo-cap">{caption}</div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Count-up animation for a number (eases to the target when mounted)
+export function CountUp({ to, dur = 1200 }: { to: number; dur?: number }) {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    let raf = 0, start: number | undefined
+    const ease = (p: number) => 1 - Math.pow(1 - p, 3)
+    const tick = (t: number) => {
+      if (start === undefined) start = t
+      const p = Math.min(1, (t - start) / dur)
+      setN(Math.round(ease(p) * to))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [to, dur])
+  return <>{n.toLocaleString()}</>
+}
+
+// Live npm stats for the published package (version + downloads). Degrades to an
+// install strip if the package isn't on npm yet or the API is unreachable.
+export function NpmStats({ pkg = 'kernelcms' }: { pkg?: string }) {
+  const [d, setD] = useState<any>(undefined) // undefined = loading, null = unavailable
+  useEffect(() => {
+    let on = true
+    const j = (u: string) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    Promise.all([
+      j(`https://registry.npmjs.org/${pkg}/latest`),
+      j(`https://api.npmjs.org/downloads/point/last-week/${pkg}`),
+      j(`https://api.npmjs.org/downloads/range/last-year/${pkg}`),
+    ]).then(([latest, week, year]) => {
+      if (!on) return
+      const weekly = typeof week?.downloads === 'number' ? week.downloads : null
+      const version = latest?.version ?? null
+      if (version == null && weekly == null) { setD(null); return }
+      const total = Array.isArray(year?.downloads) ? year.downloads.reduce((a: number, x: any) => a + (x.downloads || 0), 0) : null
+      setD({ version, weekly, total })
+    })
+    return () => { on = false }
+  }, [pkg])
+
+  const card = 'border border-[var(--border)] bg-[var(--surface)] rounded-[16px] overflow-hidden'
+  const cell = 'px-7 py-5 flex flex-col gap-1 min-w-[150px]'
+  const label = 'font-[family-name:var(--mono)] text-[11px] uppercase tracking-[0.12em] text-[var(--faint)]'
+  const num = 'font-[family-name:var(--mono)] text-[clamp(1.4rem,1rem+1.4vw,2rem)] font-medium tracking-[-0.02em] leading-none text-[var(--text)]'
+  const live = (
+    <span className="inline-flex items-center gap-2 font-[family-name:var(--mono)] text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">
+      <span className="w-[7px] h-[7px] rounded-full bg-[var(--ok)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--ok)_22%,transparent)] animate-pulse" /> live from npm
+    </span>
+  )
+
+  if (d === null) {
+    // not published yet / unreachable: clean install strip
+    return (
+      <div className={`${card} flex items-center gap-5 flex-wrap p-5`}>
+        <span className="inline-flex items-center gap-3 font-[family-name:var(--mono)] text-sm">
+          <span className="text-[var(--faint)]">$</span> npm install {pkg}
+          <button className="grid place-items-center w-7 h-7 rounded-[7px] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] [&>svg]:w-[14px]" aria-label="Copy"
+            onClick={(e) => { navigator.clipboard?.writeText('npm install ' + pkg); const b = e.currentTarget; const o = b.innerHTML; b.innerHTML = ICONS.check; setTimeout(() => (b.innerHTML = o), 1200) }}><Icon name="copy" /></button>
+        </span>
+        <span className="flex-1" />
+        <span className="font-[family-name:var(--mono)] text-[12px] text-[var(--faint)]">open source · MIT · stats go live on publish</span>
+      </div>
+    )
+  }
+  return (
+    <div className={`${card} flex items-stretch flex-wrap divide-x divide-[var(--border)] max-[680px]:divide-x-0 max-[680px]:divide-y`}>
+      <div className={`${cell} justify-center !gap-2`}>{live}<span className="font-[family-name:var(--mono)] text-sm text-[var(--text)]">{pkg}{d?.version ? <span className="text-[var(--muted)]"> v{d.version}</span> : null}</span></div>
+      <div className={cell}><span className={label}>Weekly installs</span><span className={num}>{d?.weekly != null ? <CountUp to={d.weekly} /> : '—'}</span></div>
+      <div className={cell}><span className={label}>Downloads / year</span><span className={num}>{d?.total != null ? <CountUp to={d.total} /> : '—'}</span></div>
+      <div className={cell}><span className={label}>License</span><span className={num}>MIT</span></div>
     </div>
   )
 }
