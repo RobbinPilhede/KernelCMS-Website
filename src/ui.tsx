@@ -44,6 +44,9 @@ export function ThemeToggle() {
 }
 
 const GITHUB = 'https://github.com/RobbinPilhede/KernelCMS'
+// Bump when the demo videos are re-recorded so browsers/CDN fetch the new file
+// instead of a cached copy at the same path.
+const VIDEO_VERSION = 'cc-2026-06-13'
 const openCmdk = () => window.dispatchEvent(new Event('kcmdk'))
 
 export function Topbar() {
@@ -57,16 +60,16 @@ export function Topbar() {
   const navLink = 'px-3 py-2 rounded-lg text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]'
   return (
     <header className="sticky top-[14px] z-[60] mt-[14px] px-[clamp(18px,4vw,36px)]" id="topbar">
-      <div className={`flex items-center gap-[18px] max-w-[var(--maxw)] mx-auto py-[9px] pl-4 pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
-        <Logo />
-        <nav className="flex items-center gap-1 ml-[14px] max-[920px]:hidden">
+      <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-[18px] max-w-[var(--maxw)] mx-auto py-[9px] pl-4 pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
+        <div className="justify-self-start"><Logo /></div>
+        <nav className="flex items-center gap-1 justify-self-center max-[920px]:hidden">
           <Link to="/docs" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Docs</Link>
           <Link to="/guides" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Guides</Link>
           <Link to="/blog" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Blog</Link>
           <Link to="/about" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>About</Link>
+          <Link to="/safety" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Safety</Link>
         </nav>
-        <div className="flex-1" />
-        <div className="flex items-center gap-[10px]">
+        <div className="flex items-center gap-[10px] justify-self-end">
           <button className="inline-flex items-center gap-2 px-[10px] py-[7px] rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[13px] cursor-pointer transition-[border-color,color] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--text)_22%,var(--border))] [&>svg]:w-[15px] [&>svg]:h-[15px]" onClick={openCmdk}>
             <Icon name="search" /><span className="max-[920px]:hidden">Search</span>
             <kbd className="font-[family-name:var(--mono)] text-[11px] px-[5px] py-px rounded-[5px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--muted)]">⌘K</kbd>
@@ -81,7 +84,7 @@ export function Topbar() {
         <div className="fixed inset-0 z-[90]" onClick={(e) => { if ((e.target as HTMLElement).closest('[data-close]') || (e.target as HTMLElement).dataset.scrim) setOpen(false) }}>
           <div className="absolute inset-0 bg-[rgba(8,10,16,0.5)] backdrop-blur-[2px]" data-scrim="1" />
           <div className="absolute right-0 top-0 bottom-0 w-[min(82vw,340px)] bg-[var(--surface)] border-l border-[var(--border)] p-[18px] flex flex-col gap-[6px]">
-            {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog']].map(([t, to]) => (
+            {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog'], ['About', '/about'], ['Safety', '/safety']].map(([t, to]) => (
               <Link key={to} to={to} data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">{t}</Link>
             ))}
             <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className={`${btnPrimary} mt-2 justify-center`} data-close>Get started</Link>
@@ -157,8 +160,8 @@ export function DemoPlayer({ url, caption, base, autoplay }: { url: string; capt
       <div className="demo-chrome"><span /><span /><span /><div className="demo-url">{url}</div></div>
       <div className="demo-stage">
         <video className="demo-video" muted loop playsInline preload={autoplay ? 'auto' : 'metadata'} autoPlay={autoplay}>
-          <source src={`/assets/video/${base}.webm`} type="video/webm" />
-          <source src={`/assets/video/${base}.mp4`} type="video/mp4" />
+          <source src={`/assets/video/${base}.webm?v=${VIDEO_VERSION}`} type="video/webm" />
+          <source src={`/assets/video/${base}.mp4?v=${VIDEO_VERSION}`} type="video/mp4" />
         </video>
         <span className="demo-badge">DEMO</span>
         <div className="demo-poster">
