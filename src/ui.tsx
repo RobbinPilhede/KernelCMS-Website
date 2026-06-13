@@ -46,7 +46,7 @@ export function ThemeToggle() {
 const GITHUB = 'https://github.com/RobbinPilhede/KernelCMS'
 // Bump when the demo videos are re-recorded so browsers/CDN fetch the new file
 // instead of a cached copy at the same path.
-const VIDEO_VERSION = 'cc-2026-06-13'
+const VIDEO_VERSION = 'cc-2026-06-13b'
 const openCmdk = () => window.dispatchEvent(new Event('kcmdk'))
 
 export function Topbar() {

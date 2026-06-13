@@ -118,9 +118,12 @@
       .inp { border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; font-size: 16px; background: var(--surface); min-height: 46px; display: flex; align-items: center; color: var(--text); }
       .inp.focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); animation: focusring .4s var(--e) both 1.2s; }
       @keyframes focusring { from { box-shadow: 0 0 0 6px rgba(250,250,250,0); } to { box-shadow: 0 0 0 3px rgba(250,250,250,.12); } }
-      .typed { display: inline-block; overflow: hidden; white-space: nowrap; }
-      .act.show .typed { animation: type 1.3s steps(15) both 1.4s; }
-      @keyframes type { from { width: 0; } to { width: 100%; } }
+      /* Typewriter: reveal to the TEXT width (not the full input), caret follows
+         the typing edge. inline-grid track animates 0fr -> content width. */
+      .typed { display: inline-grid; grid-template-columns: minmax(0, 0fr); overflow: hidden; vertical-align: bottom; }
+      .typed > span { white-space: nowrap; overflow: hidden; }
+      .act.show .typed { animation: type 1.2s steps(16) both 1.4s; }
+      @keyframes type { to { grid-template-columns: minmax(0, 1fr); } }
       .car { display: inline-block; width: 2px; height: 20px; background: var(--text); margin-left: 1px; vertical-align: -3px; animation: blink 1s steps(1) infinite; }
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
       .toast { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font-size: 13px; color: var(--ok); border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.08); padding: 8px 13px; border-radius: 8px; opacity: 0; }
@@ -208,17 +211,11 @@
         </div>
       </div></div>
 
-      <!-- TERMINAL -->
-      <div class="act" id="act-term"><div class="term">
-        <div class="tbar"><i></i><i></i><i></i><span>bakery &mdash; zsh</span></div>
-        <pre><div class="ln"><span class="dim">$</span> <span class="cmd">npx kernel dev</span></div><div class="ln"><span class="ok">&#10003;</span> database ready <span class="dim">&middot; cakes table created</span></div><div class="ln"><span class="ok">&#10003;</span> admin <span class="arrow">&rarr;</span> localhost:3000/admin</div><div class="ln"><span class="ok">&#10003;</span> api <span class="arrow">&nbsp;&nbsp;&rarr;</span> localhost:3000/api/cakes</div><div class="ln"><span class="dim">open the admin to start editing &mdash; no code needed</span></div></pre>
-      </div></div>
-
       <!-- ADMIN (real shell) -->
       <div class="act" id="act-admin"><div class="admin"><div class="layout">
         <div class="sidebar">
           <div class="brand"><span class="mk" data-mk></span><b>Kernel<i>CMS</i></b></div>
-          <div class="nav-section">Content</div>
+          <div class="nav-section">Collections</div>
           <div class="nav">
             <div class="nav-link"><span class="ico">__ICO_home__</span> Dashboard</div>
             <div class="nav-link active"><span class="nav-hi"></span><span class="ico">__ICO_box__</span> Cakes</div>
@@ -230,7 +227,7 @@
         <div class="main">
           <div class="phead"><h1>New cake</h1><span class="btn-p">__ICO_check__ Save</span></div>
           <div class="form">
-            <div class="field"><label>Name</label><div class="inp focus"><span class="typed">Chocolate Fudge</span><span class="car"></span></div></div>
+            <div class="field"><label>Name</label><div class="inp focus"><span class="typed"><span>Chocolate Fudge</span></span><span class="car"></span></div></div>
             <div class="row2">
               <div class="field"><label>Price</label><div class="inp">$42</div></div>
               <div class="field"><label>Status</label><div class="inp">Published</div></div>
@@ -279,11 +276,14 @@
       document.body.innerHTML = document.body.innerHTML.replace(/__ICO_(\w+)__/g, function(_, n){ return ICONS[n] || ''; });
 
       var scene = new URLSearchParams(location.search).get('scene') || 'demo';
+      // The `npx kernel dev` / first-run setup lives in the product's own
+      // onboarding wizard (sign up + create account), so it's intentionally not
+      // part of this "Claude Code adds a backend" story.
       var SCENES = {
-        demo: ['chat','term','admin','site','end'],
-        walkthrough: ['before','chat','term','admin','site','end'],
+        demo: ['chat','admin','site','end'],
+        walkthrough: ['before','chat','admin','site','end'],
       };
-      var DUR = { before:3400, chat:6000, term:3000, admin:6000, site:3400, end:2800 };
+      var DUR = { before:3400, chat:6000, admin:6000, site:3400, end:2800 };
       var acts = SCENES[scene] || SCENES.demo;
       var i = 0;
       function next() {
@@ -299,7 +299,7 @@
         i++;
         setTimeout(next, d);
       }
-      function go() { window.__ready = true; setTimeout(next, 350); }
+      function go() { window.__ready = true; setTimeout(next, 120); }
       if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
     </script>
   </body>

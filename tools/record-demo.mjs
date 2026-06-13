@@ -16,12 +16,13 @@ const require = createRequire('C:/Users/robin/Desktop/KernelCMS/');
 const { chromium } = require('@playwright/test');
 
 const SIZE = { width: 1200, height: 750 };
-// One full cycle of the scene timeline (so the looped hero video has no cut-off act).
-// demo:  chat6 + term3 + admin6 + site3.4 + end2.8 + ~0.4 lead = ~21.6s
-// walk:  before3.4 + (demo cycle) = ~25.0s
+// One full cycle of the scene timeline (so the looped hero video ends right as
+// the final act finishes and loops cleanly back to the first - no blank lead).
+// demo:  ~0.12 lead + chat6 + admin6 + site3.4 + end2.8 = ~18.3s
+// walk:  before3.4 + (demo cycle) = ~21.7s
 const SCENES = [
-  { name: 'demo', ms: 21600 },
-  { name: 'walkthrough', ms: 25000 },
+  { name: 'demo', ms: 18320 },
+  { name: 'walkthrough', ms: 21720 },
 ];
 
 const outDir = path.join(ROOT, 'public', 'assets', 'video');
