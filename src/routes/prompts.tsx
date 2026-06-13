@@ -18,6 +18,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, useHead } from '../ui'
 import { btnPrimary, btnGhost } from '../cls'
+import { BrandLogo, DARK_BRANDS } from '../brand-logos'
 import catalog from '../data/prompts-catalog.json'
 
 export const Route = createFileRoute('/prompts')({ component: Prompts })
@@ -37,9 +38,17 @@ const link = 'text-[var(--text)] underline underline-offset-[3px] decoration-[va
 type Skill = {
   name: string; title: string; description: string; category: string
   tags: string[]; difficulty: 'starter' | 'intermediate' | 'advanced'; path: string; prompt: string
+  // Migrations-only brand metadata (a competitor CMS the skill imports from).
+  brand?: string; color?: string; logo?: string
 }
+const MIGRATIONS = 'Migrations'
 const SKILLS: Skill[] = catalog.skills
 const CATEGORIES: string[] = [...catalog.categories].sort()
+// Migrations render as colorful branded cards in their own intro'd block; every
+// other category keeps the plain card grid. Sort migrations by brand name so the
+// row reads predictably (Contentful, Directus, …).
+const MIG_SKILLS: Skill[] = SKILLS.filter((s) => s.category === MIGRATIONS).sort((a, b) => (a.brand || '').localeCompare(b.brand || ''))
+const REST_SKILLS: Skill[] = SKILLS.filter((s) => s.category !== MIGRATIONS)
 
 // Icon + accent token per category, so the filter reads as a legend.
 const CAT_META: Record<string, { icon: string }> = {
@@ -57,17 +66,15 @@ const DIFF: Record<string, [string, string]> = {
 
 const COUNT_BY_CAT: Record<string, number> = SKILLS.reduce((a, s) => ((a[s.category] = (a[s.category] || 0) + 1), a), {} as Record<string, number>)
 
-// ── Skill card ─────────────────────────────────────────────────────────────
-function SkillCard({ s, onPreview }: { s: Skill; onPreview: (s: Skill) => void }) {
+// Shared clipboard hook: writes `text`, flips `copied` for 1.8s, with a
+// fallback for non-secure contexts. Used by both card variants.
+function useCopy(text: string) {
   const [copied, setCopied] = useState(false)
   const tRef = useRef<number | undefined>(undefined)
-
   const copy = async () => {
-    const text = s.prompt
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
       else {
-        // Graceful fallback for non-secure contexts / older clients.
         const ta = document.createElement('textarea')
         ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'
         document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
@@ -80,16 +87,27 @@ function SkillCard({ s, onPreview }: { s: Skill; onPreview: (s: Skill) => void }
     }
   }
   useEffect(() => () => window.clearTimeout(tRef.current), [])
+  return { copied, copy }
+}
 
+// Shared data-* attributes so the client search/filter sees every card the same
+// way, whichever variant rendered it.
+const cardData = (s: Skill) => ({
+  'data-skill': true,
+  'data-title': s.title.toLowerCase(),
+  'data-desc': s.description.toLowerCase(),
+  'data-tags': s.tags.join(' ').toLowerCase(),
+  'data-category': s.category,
+})
+
+// ── Skill card ─────────────────────────────────────────────────────────────
+function SkillCard({ s, onPreview }: { s: Skill; onPreview: (s: Skill) => void }) {
+  const { copied, copy } = useCopy(s.prompt)
   const [diffLabel, diffCol] = DIFF[s.difficulty] || DIFF.intermediate
 
   return (
     <article
-      data-skill
-      data-title={s.title.toLowerCase()}
-      data-desc={s.description.toLowerCase()}
-      data-tags={s.tags.join(' ').toLowerCase()}
-      data-category={s.category}
+      {...cardData(s)}
       className={`${card} flex flex-col bg-[var(--surface)] transition-[border-color,transform,box-shadow] duration-150 hover:border-[color-mix(in_srgb,var(--text)_18%,var(--border))] hover:-translate-y-px`}
     >
       <div className="p-[clamp(18px,2.5vw,24px)] flex flex-col gap-[14px] flex-1">
@@ -145,6 +163,131 @@ function SkillCard({ s, onPreview }: { s: Skill; onPreview: (s: Skill) => void }
           rel="noopener"
           aria-label={`View the ${s.title} skill on GitHub`}
           className="grid place-items-center min-h-[44px] min-w-[44px] px-[12px] text-[var(--muted)] transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+          title="View on GitHub"
+        >
+          <Icon name="github" />
+        </a>
+      </div>
+    </article>
+  )
+}
+
+// ── Migration card (Migrations category) ───────────────────────────────────
+// A colorful, brand-accented variant: the competitor's logo, brand color as a
+// tasteful accent (top hairline, tinted logo chip, soft hover glow), and the
+// same Copy-prompt + View-on-GitHub actions as the plain card. Very dark brands
+// (e.g. Payload #000000) fall back to var(--text) so the mark stays visible on
+// the dark theme, with a neutral accent instead of an invisible one.
+function MigrationCard({ s, onPreview }: { s: Skill; onPreview: (s: Skill) => void }) {
+  const { copied, copy } = useCopy(s.prompt)
+  const isDark = DARK_BRANDS.has(s.logo || '')
+  // `accent` drives the colored treatment; the logo ink may differ for dark brands.
+  const accent = isDark ? 'var(--text)' : (s.color || 'var(--text)')
+  const ink = accent
+  const brandLabel = s.brand || s.title
+
+  return (
+    <article
+      {...cardData(s)}
+      className={`${card} group relative flex flex-col transition-[border-color,transform,box-shadow] duration-150 hover:-translate-y-px`}
+      style={{
+        // Brand-tinted surface + border, kept subtle on the dark theme.
+        background: `color-mix(in srgb, ${accent} 6%, var(--surface))`,
+        borderColor: `color-mix(in srgb, ${accent} 22%, var(--border))`,
+        ['--glow' as any]: `color-mix(in srgb, ${accent} 30%, transparent)`,
+      }}
+    >
+      {/* brand accent hairline along the top edge */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-[3px] rounded-t-[14px]"
+        style={{ background: `linear-gradient(90deg, ${accent}, color-mix(in srgb, ${accent} 45%, transparent))` }}
+      />
+      {/* soft glow on hover, brand-tinted (no transition: all) */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-[14px] opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        style={{ boxShadow: '0 16px 40px -22px var(--glow)' }}
+      />
+
+      <div className="relative p-[clamp(18px,2.5vw,24px)] flex flex-col gap-[14px] flex-1">
+        {/* logo chip + "Migration" pill */}
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className="grid place-items-center w-12 h-12 rounded-[13px] border [&_svg]:w-[26px] [&_svg]:h-[26px]"
+            style={{
+              color: ink,
+              background: `color-mix(in srgb, ${accent} 12%, var(--surface))`,
+              borderColor: `color-mix(in srgb, ${accent} 30%, var(--border))`,
+            }}
+          >
+            <BrandLogo slug={s.logo || ''} title={brandLabel} />
+          </span>
+          <span
+            className="inline-flex items-center gap-[6px] font-[family-name:var(--mono)] text-[11px] border rounded-full px-[9px] py-[3px] [&_svg]:w-[13px] [&_svg]:h-[13px]"
+            style={{
+              color: isDark ? 'var(--muted)' : `color-mix(in srgb, ${accent} 70%, var(--text))`,
+              borderColor: `color-mix(in srgb, ${accent} 30%, var(--border))`,
+            }}
+          >
+            <Icon name="branch" /> Migration
+          </span>
+        </div>
+
+        <div>
+          <h3 className="text-[16.5px] font-semibold tracking-[-0.01em] leading-[1.25] m-0">{s.title}</h3>
+          <p className="text-[var(--muted)] text-[13.5px] leading-[1.55] mt-[8px] mb-0 text-pretty">{s.description}</p>
+        </div>
+
+        <ul className="list-none p-0 m-0 mt-auto flex flex-wrap gap-[6px]">
+          {s.tags.slice(0, 5).map((t) => (
+            <li
+              key={t}
+              className="font-[family-name:var(--mono)] text-[10.5px] rounded-[6px] px-[7px] py-[3px]"
+              style={{
+                color: isDark ? 'var(--faint)' : `color-mix(in srgb, ${accent} 78%, var(--text))`,
+                background: `color-mix(in srgb, ${accent} 9%, transparent)`,
+              }}
+            >
+              {t}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* actions — identical set to the plain card */}
+      <div
+        className="relative grid grid-cols-[1fr_auto_auto] items-stretch border-t divide-x"
+        style={{
+          borderColor: `color-mix(in srgb, ${accent} 18%, var(--border))`,
+          ['--divider' as any]: `color-mix(in srgb, ${accent} 18%, var(--border))`,
+        }}
+      >
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={`Copy the ${s.title} prompt to your clipboard`}
+          className="inline-flex items-center justify-center gap-[7px] min-h-[44px] px-[14px] text-[13px] font-medium text-[var(--text)] cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)] [&_svg]:w-[15px] [&_svg]:h-[15px]"
+        >
+          {copied
+            ? <span className="inline-flex items-center gap-[7px] text-[var(--ok)]"><Icon name="check" /> Copied</span>
+            : <span className="inline-flex items-center gap-[7px]"><Icon name="copy" /> Copy prompt</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => onPreview(s)}
+          aria-label={`Preview the full ${s.title} prompt`}
+          className="grid place-items-center min-h-[44px] min-w-[44px] px-[12px] text-[var(--muted)] cursor-pointer transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)] [&_svg]:w-[16px] [&_svg]:h-[16px] border-l-[color:var(--divider)]"
+          title="Preview prompt"
+        >
+          <Icon name="terminal" />
+        </button>
+        <a
+          href={blob(s.path)}
+          target="_blank"
+          rel="noopener"
+          aria-label={`View the ${s.title} skill on GitHub`}
+          className="grid place-items-center min-h-[44px] min-w-[44px] px-[12px] text-[var(--muted)] transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)] [&_svg]:w-[16px] [&_svg]:h-[16px] border-l-[color:var(--divider)]"
           title="View on GitHub"
         >
           <Icon name="github" />
@@ -236,23 +379,28 @@ function Library() {
   const [cat, setCat] = useState<string>('all')
   const [preview, setPreview] = useState<Skill | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const migRef = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState(SKILLS.length)
 
   // Filter by toggling visibility of already-rendered cards (keeps SSG markup
-  // intact and avoids re-mounting the whole grid on every keystroke).
+  // intact and avoids re-mounting the whole grid on every keystroke). The
+  // Migrations block (its own intro + branded grid) is hidden whole when none of
+  // its cards match, so the intro never floats over an empty grid.
   useEffect(() => {
     const grid = gridRef.current
     if (!grid) return
     const needle = q.trim().toLowerCase()
     let visible = 0
+    let migVisible = 0
     grid.querySelectorAll<HTMLElement>('[data-skill]').forEach((el) => {
       const matchCat = cat === 'all' || el.dataset.category === cat
       const hay = `${el.dataset.title} ${el.dataset.desc} ${el.dataset.tags}`
       const matchText = !needle || hay.includes(needle)
       const show = matchCat && matchText
       el.hidden = !show
-      if (show) visible++
+      if (show) { visible++; if (el.dataset.category === MIGRATIONS) migVisible++ }
     })
+    if (migRef.current) migRef.current.hidden = migVisible === 0
     setShown(visible)
   }, [q, cat])
 
@@ -306,9 +454,28 @@ function Library() {
       {/* aria-live count for assistive tech */}
       <p aria-live="polite" className="sr-only">{shown} of {SKILLS.length} skills shown.</p>
 
-      {/* The grid - all cards rendered for SSG; filter toggles [hidden]. */}
-      <div ref={gridRef} className="grid grid-cols-3 gap-[clamp(14px,2vw,20px)] max-[1040px]:grid-cols-2 max-[680px]:grid-cols-1">
-        {SKILLS.map((s) => <SkillCard key={s.name} s={s} onPreview={setPreview} />)}
+      {/* All cards rendered for SSG; filter toggles [hidden]. Migrations get
+          their own branded block + intro; every other category is a plain card. */}
+      <div ref={gridRef}>
+        {MIG_SKILLS.length > 0 && (
+          <div ref={migRef} className="mb-[clamp(28px,4vw,44px)]">
+            <div className="flex items-start gap-[12px] mb-[clamp(16px,2.5vw,22px)]">
+              <span className="grid place-items-center w-10 h-10 rounded-[11px] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] flex-none mt-[2px] [&_svg]:w-[19px] [&_svg]:h-[19px]"><Icon name="branch" /></span>
+              <div>
+                <h3 className="text-[18px] font-semibold tracking-[-0.01em] m-0">Coming from another CMS?</h3>
+                <p className="text-[var(--muted)] text-[14px] leading-[1.55] mt-[5px] mb-0 max-w-[56ch] text-pretty">
+                  Bring your content - mapped field-by-field and imported as drafts a human reviews before publish.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-[clamp(14px,2vw,20px)] max-[1040px]:grid-cols-2 max-[680px]:grid-cols-1">
+              {MIG_SKILLS.map((s) => <MigrationCard key={s.name} s={s} onPreview={setPreview} />)}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-[clamp(14px,2vw,20px)] max-[1040px]:grid-cols-2 max-[680px]:grid-cols-1">
+          {REST_SKILLS.map((s) => <SkillCard key={s.name} s={s} onPreview={setPreview} />)}
+        </div>
       </div>
 
       {/* Empty state (shown via JS when a search matches nothing) */}

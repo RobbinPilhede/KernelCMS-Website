@@ -6,6 +6,7 @@ import { highlight } from '../lib'
 import { HOME_SEO } from '../content'
 import { Icon, DemoPlayer, NpmStats, useHead, SITE_URL } from '../ui'
 import { btn, btnPrimary, btnGhost } from '../cls'
+import { BrandLogo, DARK_BRANDS } from '../brand-logos'
 
 export const Route = createFileRoute('/')({ component: Home })
 
@@ -118,6 +119,18 @@ const COMPARE = [
   ['Heavy features', 'Optional adapters; core stays tiny', 'Batteries baked into the core'],
 ]
 
+// Competitor CMSs we ship a "Migrate from X" skill for. Logos render monochrome
+// and warm to the brand color on hover (reduced-motion users get the brand color
+// without the transition). Payload's hex is pure black, so it stays on --text.
+const MIGRATE_BRANDS: { slug: string; name: string; color: string }[] = [
+  { slug: 'sanity', name: 'Sanity', color: '#F03E2F' },
+  { slug: 'contentful', name: 'Contentful', color: '#2478CC' },
+  { slug: 'strapi', name: 'Strapi', color: '#4945FF' },
+  { slug: 'payload', name: 'Payload', color: '#000000' },
+  { slug: 'wordpress', name: 'WordPress', color: '#21759B' },
+  { slug: 'directus', name: 'Directus', color: '#6644FF' },
+]
+
 const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
 const Eyebrow = ({ children }: any) => <p className={eyebrow}><span className="c">//</span> {children}</p>
@@ -214,6 +227,48 @@ function Home() {
               </ul>
             </div>
           ))}
+        </div>
+      </div></section>
+
+      {/* MIGRATE FROM ANYWHERE */}
+      <section className="py-[clamp(56px,8vw,104px)] relative"><div className={wrap}>
+        <div className="relative overflow-hidden border border-[var(--border)] rounded-[20px] bg-[var(--surface)] p-[clamp(28px,5vw,52px)]">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-[clamp(28px,5vw,64px)] items-center max-[860px]:grid-cols-1">
+            <div>
+              <Eyebrow>migrate from anywhere</Eyebrow>
+              <h2 className={leadH2}>Bring your content. Keep your sanity.</h2>
+              <p className="text-[var(--muted)] text-base mt-3 max-w-[52ch] text-pretty">
+                Move from Sanity, Contentful, Strapi, Payload, WordPress, or Directus - mapped field-by-field and
+                imported as drafts you review before anything goes live.
+              </p>
+              <div className="flex items-center gap-3 mt-6 flex-wrap">
+                <Link className={btnPrimary} to="/prompts"><Icon name="branch" /> Migration prompts</Link>
+                <Link className={btnGhost} to="/prompts">Browse all skills <Icon name="arrow" /></Link>
+              </div>
+            </div>
+
+            <ul className="list-none p-0 m-0 grid grid-cols-3 gap-[clamp(10px,1.6vw,16px)] max-[420px]:grid-cols-2">
+              {MIGRATE_BRANDS.map(({ slug, name, color }) => {
+                const ink = DARK_BRANDS.has(slug) ? 'var(--text)' : color
+                return (
+                  <li key={slug}>
+                    <Link
+                      to="/prompts"
+                      aria-label={`Migrate from ${name} to KernelCMS`}
+                      title={`Migrate from ${name}`}
+                      className="group grid place-items-center gap-[9px] min-h-[44px] py-[clamp(16px,2.4vw,22px)] px-2 rounded-[14px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--faint)] transition-[color,border-color,background-color] duration-200 hover:border-[color-mix(in_srgb,var(--text)_18%,var(--border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] [&_svg]:w-[clamp(26px,3vw,32px)] [&_svg]:h-[clamp(26px,3vw,32px)] [&_svg]:transition-colors [&_svg]:duration-200"
+                      style={{ ['--brand' as any]: ink }}
+                    >
+                      <span className="text-[var(--faint)] group-hover:text-[var(--brand)] group-focus-visible:text-[var(--brand)] motion-reduce:text-[var(--brand)]">
+                        <BrandLogo slug={slug} title={name} />
+                      </span>
+                      <span className="font-[family-name:var(--mono)] text-[11px] tracking-[0.02em] text-[var(--faint)] group-hover:text-[var(--muted)]">{name}</span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
         </div>
       </div></section>
 
