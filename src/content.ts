@@ -1027,6 +1027,42 @@ curl "http://localhost:3000/api/posts/hybrid?q=how%20do%20I%20deploy"`)}
 ${warn(`Results <strong>always</strong> go through the access-checked read path: a vector hit for a document the caller can't read is dropped, never leaked. <code>limit</code> is clamped (max 100) and <code>filter</code> is validated to real columns (no injection / prototype pollution). An embed failure is logged - never with the text or key - and never breaks a content write.`)}`
     },
     {
+      slug: 'knowledge-graph', group: 'Data & APIs', nav: 'Knowledge graph', title: 'Knowledge graph & GraphRAG',
+      lead: 'Your typed relationships are a graph: walk a document and its neighbors, or do GraphRAG - semantic seeds expanded into their connected context to ground an LLM.',
+      html: `
+<p>Every <code>relationship</code> and <code>upload</code> field is a typed edge between documents, and every <code>join</code> field is that edge read backwards. KernelCMS exposes that graph two ways: <code>kernel.graph(...)</code> walks a document and its connected neighbors, and <code>kernel.graphSearch(...)</code> does <strong>GraphRAG</strong> - it finds seed documents by meaning, then expands each through the graph to gather the <em>connected context</em> an LLM needs. The win over plain <a href="#/docs/semantic-search">semantic search</a>: you retrieve not just the matching document but its connected context, straight from the relationships you already modeled. This is the <strong>retrieval</strong> half - the LLM generation stays yours.</p>
+
+<h2 id="walk">Walk the neighborhood</h2>
+<p><code>kernel.graph(...)</code> runs a breadth-first walk from a seed document, following outbound relationship/upload fields <strong>and</strong> inbound reverse-relationship (<code>join</code>) fields:</p>
+${code('ts', `const { nodes, edges, truncated } = await kernel.graph({
+  collection: 'posts',
+  id,
+  depth: 2,        // hops from the seed; default 1, clamped to a max of 10
+  maxNodes: 100,   // node budget; default 100, hard cap 500
+  req,             // the request principal - access is enforced
+})`)}
+<p>You get two flat arrays. A <code>GraphNode</code> is <code>{ ref: '&lt;collection&gt;:&lt;id&gt;', collection, id, label }</code>; a <code>GraphEdge</code> is <code>{ from, to, field, relationTo, kind }</code> where <code>kind</code> is <code>'relationship'</code> (an outbound field) or <code>'reverse'</code> (an inbound join). The walk is <strong>bounded and cycle-safe</strong>: <code>depth</code> clamps to 10, <code>maxNodes</code> caps at 500, at most 200 edges are followed out of any one node, and each node is visited once - <code>truncated</code> is <code>true</code> when a bound clips the result.</p>
+
+<h2 id="graphrag">GraphRAG retrieval</h2>
+<p><code>kernel.graphSearch(...)</code> is the grounding flow: <strong>semantic seeds → graph expansion → context</strong>.</p>
+${code('ts', `const { seeds, nodes, edges, context, truncated } = await kernel.graphSearch({
+  collection: 'posts',   // required when more than one collection is searchable
+  query: 'who wrote about single-container deploys?',
+  depth: 1,              // how far to expand each seed; same clamp as graph()
+  limit: 5,              // number of seed documents to retrieve
+  req,
+})
+// context: Array<{ ref, label, text }> - drop straight into an LLM prompt`)}
+<p>It finds the seed documents by meaning through the same retrieval stack as <a href="#/docs/semantic-search">semantic search</a>, walks each seed through the graph (outbound + reverse edges, up to <code>depth</code>), and returns the seeds, the merged subgraph, and a <code>context</code> array of label + text snippets to ground a model.</p>
+${note(`<strong>graphSearch needs <code>embeddings</code>.</strong> The seed step is semantic/hybrid search, so it wants a configured embedder. Without one it degrades gracefully - full-text, then a plain <code>find</code> - so you still get seeds, just keyword-ranked. The expansion and the access guarantee are identical either way.`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Both ops over HTTP, access-checked to the request principal:</p>
+${code('bash', `curl "http://localhost:3000/api/posts/<id>/graph?depth=2&maxNodes=100"
+curl "http://localhost:3000/api/graph-search?q=who%20wrote%20about%20deploys&collection=posts&depth=1"`)}
+${tip(`Every node loads through the same access-checked read path. A node the caller can't read is dropped <strong>and the edge to it is omitted</strong>, so the relationship's existence never leaks; read-denied fields never appear in a <code>label</code> or <code>context</code>; and the bounds (<code>depth</code>, <code>maxNodes</code>, fan-out, de-dupe) make traversal DoS-safe. It is the retrieval half - the LLM generation stays yours.`)}`
+    },
+    {
       slug: 'ai-discoverability', group: 'Data & APIs', nav: 'AI discoverability', title: 'AI discoverability (llms.txt & GEO)',
       lead: 'Make your content ingestible and citable by AI answer engines - llms.txt, a full corpus, RAG chunks, and per-document GEO markdown, all published-only.',
       html: `
