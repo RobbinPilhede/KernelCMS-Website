@@ -302,7 +302,18 @@ ${code('ts', `{ type: 'row', fields: [
       html: `
 <h2 id="basic">A simple relationship</h2>
 ${code('ts', `{ name: 'author', type: 'relationship', relationTo: 'users' }`)}
-<p>Stored as the related document's id. Set <code>hasMany: true</code> to store an array of ids.</p>
+<p>Stored as the related document's id. Set <code>hasMany: true</code> to store an array of ids. The foreign-key column is <strong>indexed by default</strong>, so lookups and <code>depth</code> population stay fast without you adding <code>index: true</code> by hand.</p>
+
+<h2 id="on-delete">What happens when the target is deleted</h2>
+<p><code>onDelete</code> decides how a relationship reacts when the document it points at is removed. The default leaves the reference dangling (<code>populate</code> tolerates a missing target):</p>
+${code('ts', `{ name: 'author', type: 'relationship', relationTo: 'users',
+  onDelete: 'setNull' }   // 'setNull' | 'cascade' | 'restrict'`)}
+<ul>
+<li><strong><code>setNull</code></strong> - clear the reference (or pull the id from a <code>hasMany</code> list) when the target is deleted.</li>
+<li><strong><code>cascade</code></strong> - delete the referring document too.</li>
+<li><strong><code>restrict</code></strong> - block the delete while any document still references the target.</li>
+</ul>
+${note(`<code>onDelete</code> runs through the normal delete pipeline - a <code>cascade</code> still applies the referring collection's delete access and hooks, never a raw row drop.`)}
 
 <h2 id="polymorphic">Polymorphic relationships</h2>
 <p>Point a field at more than one collection. Polymorphic values are stored and returned as <code>{ relationTo, value }</code> so the target is always explicit:</p>
@@ -426,8 +437,24 @@ ${code('ts', `access: {
 ${code('ts', `{ name: 'internal_notes', type: 'textarea',
   access: { read: ({ req }) => req.user?.roles?.includes('staff') ?? false } }`)}
 
+<h2 id="publish">The publish rule</h2>
+<p>On a drafts-enabled collection, moving a document to <code>published</code> is its own access-controlled transition, separate from <code>update</code>. Add a <code>publish</code> rule to gate it - a principal who can <em>edit</em> a draft still cannot make it live unless this returns true:</p>
+${code('ts', `access: {
+  update:  ({ req }) => Boolean(req.user),                       // editors can edit
+  publish: ({ req }) => req.user?.roles?.includes('admin') ?? false, // only admins go live
+}`)}
+<p>It fires for any move to <code>published</code> - <code>publish()</code>, a raw <code>_status</code> write, or a scheduled publish.</p>
+
+<h2 id="agents">Agent principals</h2>
+<p>A request carries a <code>principalType</code> of <code>user</code> or <code>agent</code>. An AI agent (see <a href="#/docs/mcp">AI agents & MCP</a>) runs through this exact same pipeline as a human, with two extra, engine-enforced brakes layered on top:</p>
+<ul>
+<li><strong><code>fieldScope</code></strong> - an agent only ever writes the fields in its <code>fieldScope.allow</code> (deny-by-default); unlisted fields are stripped from every write before per-field rules even run.</li>
+<li><strong>Draft-only</strong> - agents can never publish, regardless of the <code>publish</code> rule. A born-published create, a <code>_status: 'published'</code> write, a <code>publish()</code>, or scheduling via <code>_scheduled_at</code> are all rejected for an agent principal.</li>
+</ul>
+${note(`Granting an agent the <code>admin</code> role is rejected at startup - it would silently widen every role-gated rule for a non-human caller. An agent's real guard is its <code>fieldScope</code> plus the draft-only brake.`)}
+
 <h2 id="override">overrideAccess</h2>
-<p>Every Local API operation accepts <code>overrideAccess: true</code>, which <strong>bypasses all access checks</strong> and runs as a trusted system caller (it also lets you set server-managed auth fields). Use it in seeds, migrations, jobs, and trusted server code - never with untrusted input. Over HTTP, the equivalent is the API-key bearer token.</p>
+<p>Every Local API operation accepts <code>overrideAccess: true</code>, which <strong>bypasses all access checks</strong> and runs as a trusted system caller (it also lets you set server-managed auth fields). Use it in seeds, migrations, jobs, and trusted server code - never with untrusted input. Over HTTP, the equivalent is the API-key bearer token. The MCP agent path <strong>never</strong> sets it.</p>
 ${warn(`<strong>Privilege-escalation guard.</strong> On an auth collection, authority fields (<code>roles</code>, <code>role</code>, <code>permissions</code>, <code>is_admin</code>, <code>is_staff</code>, <code>is_superuser</code>) are admin-write by default - even a user who can update their own record cannot promote themselves. An explicit field-level <code>access.update</code> rule overrides the default; trusted paths using <code>overrideAccess</code> still set them.`)}`
     },
     {
@@ -490,6 +517,107 @@ export default defineConfig({
 
 <h2 id="csrf">Sessions & CSRF</h2>
 <p>By default login sets the token in an <code>HttpOnly</code>, <code>SameSite=Lax</code> cookie (<code>Secure</code> over HTTPS), so an XSS cannot read it. <code>Authorization: Bearer &lt;token&gt;</code> still works for API clients. CSRF is covered by <code>SameSite=Lax</code> plus a same-origin <code>Origin</code> check on cookie-authed writes; Bearer callers are exempt.</p>`
+    },
+
+    {
+      slug: 'mcp', group: 'Access & auth', nav: 'AI agents & MCP', title: 'AI agents & the MCP server',
+      lead: 'Serve your headless CMS over the Model Context Protocol so an AI agent becomes a first-class, access-controlled principal - scoped to the fields you allow, and unable to publish.',
+      html: `
+<p>KernelCMS speaks the <a href="https://modelcontextprotocol.io" rel="noopener">Model Context Protocol</a> (MCP), the open standard for connecting AI agents to tools and data. Point a client like Claude Desktop or Cursor at your kernel and it can list, read, and write your content - but only ever as an <strong>access-controlled principal</strong>, never as a privileged back door. There is a dedicated <a href="/mcp">MCP overview page</a> if you want the high-level pitch first.</p>
+
+<h2 id="agent-native">Agent-native, not bolted-on</h2>
+<p>Most CMS "AI" is one of two things: a writing assistant that drafts copy in a side panel, or a thin MCP server holding one broad token that can do anything the API can. KernelCMS is neither. An AI agent here is a real principal that flows through the <em>exact same</em> per-operation permission pipeline as a human - see <a href="#/docs/access-control">access control</a>. Every tool call runs the collection's <code>read</code> / <code>create</code> / <code>update</code> / <code>delete</code> rules against the agent, with row-level filters and field-level access applied.</p>
+<p>The crucial property: <strong>the MCP layer enforces nothing on its own.</strong> It stamps the request with an agent principal and forwards it to the in-process Local API; <code>overrideAccess</code> is never set. Access control, field scoping, and the draft-only brake all live in <code>@kernel/core</code> and run identically whether the caller is a browser, a REST client, or an agent. There is no parallel permission system to keep in sync.</p>
+
+<h2 id="define">Define an agent</h2>
+<p>Register agents on your config. Each authenticates with a bearer <code>token</code> (sourced from the environment, never hardcoded) and may carry <code>roles</code> and a <code>fieldScope</code>:</p>
+${code('ts', `export default defineConfig({
+  agents: [
+    {
+      id: 'content-bot',
+      token: process.env.CONTENT_BOT_TOKEN,   // bearer credential, from env
+      roles: ['editor'],                       // never 'admin' - rejected at startup
+      fieldScope: { allow: ['title', 'body', 'excerpt'] }, // deny-by-default
+    },
+  ],
+  // …
+})`)}
+${warn(`<strong>The 'admin' role is rejected at startup.</strong> Granting an agent <code>admin</code> would widen every role-gated access rule for a non-human caller, so the config sanitizer fails fast. An agent's real guard is its <code>fieldScope.allow</code> plus the hard draft-only brake.`)}
+
+<h2 id="guarantees">The guarantees</h2>
+<p>These hold because they are enforced by the engine, not by the adapter:</p>
+${warn(`<ul>
+<li><strong>Writes are scoped to <code>fieldScope.allow</code> (deny-by-default).</strong> Unlisted fields are stripped from every write before per-field rules even run. An agent scoped to <code>['title']</code> simply cannot set <code>roles</code>, regardless of any field rule.</li>
+<li><strong>Agents cannot publish - drafts only.</strong> A born-published <code>create</code>, a <code>_status: 'published'</code> write, a <code>publish()</code>, or scheduling via <code>_scheduled_at</code> are all rejected for an agent principal. Publishing stays a human decision.</li>
+<li><strong>Never runs with <code>overrideAccess</code>.</strong> Nothing in the MCP path can bypass the access pipeline.</li>
+<li><strong>Attributed in version history.</strong> Every snapshot an agent authors records <code>createdByType: 'agent'</code>, so "review the agent's changes" is a queryable filter.</li>
+</ul>`)}
+
+<h2 id="serve">Serve it</h2>
+<p>For a single desktop client, run the stdio transport - the client spawns the process and speaks JSON-RPC over stdin/stdout:</p>
+${code('bash', `# stdio (default) - for Claude Desktop / Cursor
+npx kernel mcp --agent content-bot`)}
+<p>With exactly one configured agent, <code>--agent</code> is optional; with several it is required. Wire it into Claude Desktop's <code>claude_desktop_config.json</code>:</p>
+${code('json', `{
+  "mcpServers": {
+    "kernelcms": {
+      "command": "npx",
+      "args": ["kernel", "mcp", "--agent", "content-bot"],
+      "env": { "CONTENT_BOT_TOKEN": "…" }
+    }
+  }
+}`)}
+<p>For multiple agents, serve over HTTP. Each request is authenticated independently from its bearer token, so different agents connect with different scoped tokens and never share a principal:</p>
+${code('bash', `# multi-agent HTTP - principal resolved per-request from the token
+kernel mcp --http --port 4000 --host 127.0.0.1`)}
+${code('bash', `curl -X POST http://127.0.0.1:4000/mcp \\
+  -H "Authorization: Bearer $CONTENT_BOT_TOKEN" \\
+  -H "Content-Type: application/json" -d '{ … }'`)}
+<p>Token resolution is constant-time and binds to loopback by default - do not expose the HTTP transport on a public interface without a TLS proxy in front. For programmatic embedding, call <code>serveStdio</code> / <code>serveHttp</code> directly:</p>
+${code('ts', `import { initKernel } from 'kernelcms'
+import { serveStdio, serveHttp } from 'kernelcms/mcp'
+import config from './kernel.config'
+
+const kernel = await initKernel(config, { autoMigrate: true })
+
+// single principal, over stdio
+await serveStdio(kernel, {
+  principal: { id: 'content-bot', roles: ['editor'], fieldScope: { allow: ['title', 'body'] } },
+})
+
+// or multi-agent over HTTP (principals resolved per-request from the token)
+serveHttp(kernel, { port: 4000, host: '127.0.0.1' })`)}
+
+<h2 id="tools">The tool surface</h2>
+<p>Tools are <strong>auto-generated</strong> from the same content-model descriptor that drives the OpenAPI spec, so the agent surface never drifts from the HTTP surface. For each non-hidden, non-auth collection:</p>
+<table class="compare"><thead><tr><th>Tool</th><th class="us">Operation</th></tr></thead><tbody>
+<tr><td><code>&lt;slug&gt;_list</code></td><td class="us-col">paginated, access-filtered <code>find</code></td></tr>
+<tr><td><code>&lt;slug&gt;_get</code></td><td class="us-col"><code>findByID</code> (reads the latest draft)</td></tr>
+<tr><td><code>&lt;slug&gt;_count</code></td><td class="us-col"><code>count</code> matching an optional filter</td></tr>
+<tr><td><code>&lt;slug&gt;_versions</code></td><td class="us-col">review change history (versioned collections)</td></tr>
+<tr><td><code>&lt;slug&gt;_create</code></td><td class="us-col"><code>create</code> (a draft)</td></tr>
+<tr><td><code>&lt;slug&gt;_update</code></td><td class="us-col"><code>update</code> by id</td></tr>
+<tr><td><code>&lt;slug&gt;_delete</code></td><td class="us-col"><code>delete</code> by id</td></tr>
+</tbody></table>
+<p>Globals get <code>&lt;slug&gt;_get_global</code> and <code>&lt;slug&gt;_update_global</code>. Auth and hidden collections are excluded entirely - handing an agent user or credential CRUD is a footgun closed here, even though the access pipeline would also gate it. Input schemas come from the shared JSON-Schema mapper, so they match your fields exactly and omit server-managed columns (<code>hash</code>, <code>api_key</code>, <code>_status</code>).</p>
+<p>Your own business logic can join the surface too. Set <code>mcp: true</code> on a <a href="#/docs/custom-endpoints">custom endpoint</a> to expose it as a tool - gated by that endpoint's own <code>access</code> rule, run through the same <code>invokeEndpoint</code> path as the HTTP route:</p>
+${code('ts', `defineEndpoint({
+  method: 'POST',
+  path: '/posts/:id/summarize',
+  access: ({ req }) => Boolean(req.user),
+  mcp: true, // opt this endpoint into the agent tool surface
+  handler: async ({ input, ctx }) => { /* … */ },
+})`)}
+${note(`Each tool carries MCP safety annotations (<code>readOnlyHint</code>, <code>destructiveHint</code>, <code>idempotentHint</code>) so a client can label and group calls for the human in the loop. They are advisory: the core access pipeline is what actually enforces anything.`)}
+
+<h2 id="resources">Resources: model introspection</h2>
+<p>Before calling a single tool, an agent can discover your content model through MCP resources:</p>
+${code('text', `kernel://schema                    # the full content-model descriptor
+kernel://collections/<slug>        # one collection's fields and labels`)}
+<p>Both expose only <strong>visible</strong> collections - hidden and auth collections are never introspectable, so no <code>email</code> / <code>api_key</code> / <code>reset_token</code> field names ever leak. The descriptor served is the secret-stripped one, matching the tool surface exactly.</p>
+
+<h2 id="install">Install</h2>
+${note(`Import from <code>kernelcms/mcp</code>. The <code>@modelcontextprotocol/sdk</code> is an <strong>optional peer dependency</strong> - it is loaded lazily only when you run <code>kernel mcp</code>, so the base install stays lean. If it is missing, the CLI tells you to install it: <code>npm install @modelcontextprotocol/sdk</code>.`)}`
     },
 
     // ---- Data & APIs --------------------------------------------------------
@@ -733,6 +861,16 @@ defineEndpoint({
     })
   },
 })`)}
+
+<h2 id="mcp">Expose an endpoint to AI agents</h2>
+<p>Set <code>mcp: true</code> and the endpoint joins the <a href="#/docs/mcp">MCP agent tool surface</a> alongside the generated CRUD tools. It runs through the same <code>invokeEndpoint</code> path as the HTTP route and stays gated by its own <code>access</code> rule - so opting in never widens who can call it:</p>
+${code('ts', `defineEndpoint({
+  method: 'POST',
+  path: '/posts/:id/summarize',
+  access: ({ req }) => Boolean(req.user),
+  mcp: true, // also callable as an agent tool, still access-gated
+  handler: async ({ input, ctx }) => { /* … */ },
+})`)}
 ${warn(`Endpoints are <strong>authenticated-only until you set <code>access</code></strong>, share the same error envelope as core routes, and <strong>cannot shadow</strong> built-in auth or system routes.`)}`
     },
     {
@@ -929,6 +1067,7 @@ await kernel.unpublish({ collection: 'posts', id })
 
 // schedule a future publish - stays a draft until then
 await kernel.publish({ collection: 'posts', id, publishAt: '2026-07-01T09:00:00Z' })`)}
+${note(`Publishing is a <strong>distinct, access-controlled transition</strong>, gated by the collection's <code>access.publish</code> rule (see <a href="#/docs/access-control">access control</a>) - separate from <code>update</code>, so you can let editors save drafts while only admins go live. <strong>Agent principals are draft-only:</strong> any move to <code>published</code>, including a scheduled <code>_scheduled_at</code>, is rejected for an <a href="#/docs/mcp">AI agent</a>.`)}
 
 <h2 id="scheduled">Driving scheduled publishes</h2>
 ${code('bash', `# a cron that flips due scheduled publishes
@@ -1030,6 +1169,7 @@ ${tip(`Make <code>kernel doctor</code> your deploy preflight - it runs the stati
 <tr><td><code>kernel generate:types</code></td><td>Emit TypeScript interfaces for your collections.</td></tr>
 <tr><td><code>kernel generate:module</code></td><td>Scaffold a new module.</td></tr>
 <tr><td><code>kernel jobs:run</code></td><td>Drain due background jobs (drive from cron).</td></tr>
+<tr><td><code>kernel mcp</code></td><td>Serve the kernel to <a href="#/docs/mcp">AI agents</a> over MCP (stdio by default; <code>--http</code> for multi-agent).</td></tr>
 <tr><td><code>kernel doctor</code></td><td>Config + connectivity preflight (non-zero on failure).</td></tr>
 <tr><td><code>kernel info</code></td><td>Print resolved config + system facts.</td></tr>
 </tbody></table>
@@ -1039,6 +1179,7 @@ ${tip(`Make <code>kernel doctor</code> your deploy preflight - it runs the stati
 <li><code>--config &lt;path&gt;</code> - config path (default <code>./kernel.config.ts</code>). Every data command accepts it.</li>
 <li><code>--port &lt;number&gt;</code> - port for <code>dev</code>/<code>start</code> (default <code>$PORT</code> or 3000).</li>
 <li><code>--out &lt;path&gt;</code> - output for <code>generate:*</code> / snapshot path for <code>migrate:*</code>.</li>
+<li><code>--agent &lt;id&gt;</code> / <code>--http</code> / <code>--host &lt;host&gt;</code> - for <code>kernel mcp</code>: pick the stdio agent principal (required when more than one is configured), serve over HTTP for multiple agents, and bind to a host (default <code>127.0.0.1</code>).</li>
 </ul>
 
 <h2 id="seed">The seed convention</h2>

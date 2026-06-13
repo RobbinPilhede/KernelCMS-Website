@@ -68,6 +68,7 @@ export function Topbar() {
           <Link to="/blog" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Blog</Link>
           <Link to="/about" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>About</Link>
           <Link to="/safety" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Safety</Link>
+          <Link to="/mcp" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>MCP</Link>
         </nav>
         <div className="flex items-center gap-[10px] justify-self-end">
           <button className="inline-flex items-center gap-2 px-[10px] py-[7px] rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[13px] cursor-pointer transition-[border-color,color] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--text)_22%,var(--border))] [&>svg]:w-[15px] [&>svg]:h-[15px]" onClick={openCmdk}>
@@ -84,7 +85,7 @@ export function Topbar() {
         <div className="fixed inset-0 z-[90]" onClick={(e) => { if ((e.target as HTMLElement).closest('[data-close]') || (e.target as HTMLElement).dataset.scrim) setOpen(false) }}>
           <div className="absolute inset-0 bg-[rgba(8,10,16,0.5)] backdrop-blur-[2px]" data-scrim="1" />
           <div className="absolute right-0 top-0 bottom-0 w-[min(82vw,340px)] bg-[var(--surface)] border-l border-[var(--border)] p-[18px] flex flex-col gap-[6px]">
-            {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog'], ['About', '/about'], ['Safety', '/safety']].map(([t, to]) => (
+            {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog'], ['About', '/about'], ['Safety', '/safety'], ['MCP', '/mcp']].map(([t, to]) => (
               <Link key={to} to={to} data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">{t}</Link>
             ))}
             <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className={`${btnPrimary} mt-2 justify-center`} data-close>Get started</Link>
@@ -116,7 +117,7 @@ export function Footer() {
           {col('Product', [['Features', L('/')], ['Docs', L('/docs')], ['Guides', L('/guides')], ['Quickstart', L('/docs/$slug', { slug: 'quickstart' })]])}
           {col('Resources', [['Blog', L('/blog')], ['Changelog', L('/changelog')], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
           {col('Company', [['About', L('/about')], ['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
-          {col('Community', [['GitHub', GITHUB], ['Safety', L('/safety')], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
+          {col('Community', [['GitHub', GITHUB], ['Safety', L('/safety')], ['MCP server', L('/mcp')], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
         </div>
         <div className="flex items-center justify-between gap-4 mt-12 pt-6 border-t border-[var(--border)] text-[var(--faint)] text-[13px] flex-wrap">
           <span>© 2026 KernelCMS · MIT licensed core</span><span>Built on web standards · Runs on Node, edge, any container</span>

@@ -5,6 +5,7 @@
   <url><loc>https://kernelcms.com/blog</loc><lastmod>2026-06-13</lastmod><priority>0.7</priority></url>
   <url><loc>https://kernelcms.com/about</loc><lastmod>2026-06-13</lastmod><priority>0.6</priority></url>
   <url><loc>https://kernelcms.com/safety</loc><lastmod>2026-06-13</lastmod><priority>0.6</priority></url>
+  <url><loc>https://kernelcms.com/mcp</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/changelog</loc><lastmod>2026-06-13</lastmod><priority>0.6</priority></url>
   <url><loc>https://kernelcms.com/docs/introduction</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/installation</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
@@ -17,6 +18,7 @@
   <url><loc>https://kernelcms.com/docs/localization</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/access-control</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/authentication</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
+  <url><loc>https://kernelcms.com/docs/mcp</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/local-api</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/rest-api</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>
   <url><loc>https://kernelcms.com/docs/querying</loc><lastmod>2026-06-13</lastmod><priority>0.8</priority></url>

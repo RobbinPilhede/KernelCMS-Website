@@ -10,6 +10,7 @@ Key facts:
 - Secure by default: deny-by-default access control, row-level filters, field-level redaction, and a privilege-escalation guard.
 - No-code editing for content teams: React admin, live preview, a blocks page builder, drafts, versions, scheduled publish.
 - Self-host and own your data (no SaaS lock-in, unlike Sanity/Contentful).
+- Agent-native: an MCP server (kernel mcp) hands the CMS to AI agents like Claude Desktop or Cursor as a first-class, access-controlled principal - field-scoped, draft-only, never overrideAccess.
 
 ## Documentation
 - [Introduction to KernelCMS](https://kernelcms.com/docs/introduction): KernelCMS is a config-as-code, end-to-end TypeScript headless CMS that never hijacks your framework.
@@ -23,6 +24,7 @@ Key facts:
 - [Localization](https://kernelcms.com/docs/localization): Per-field translations with a configurable locale set and fallbacks.
 - [Access control](https://kernelcms.com/docs/access-control): Deny-by-default authorization at the collection and field level - booleans or row filters.
 - [Authentication](https://kernelcms.com/docs/authentication): Auth collections, sessions, API keys, password reset, email verification, 2FA, and OAuth.
+- [AI agents & the MCP server](https://kernelcms.com/docs/mcp): Serve your headless CMS over the Model Context Protocol so an AI agent becomes a first-class, access-controlled principal - field-scoped, draft-only, and never able to bypass access. Connect Claude Desktop or Cursor.
 - [The Local API](https://kernelcms.com/docs/local-api): The same operations as REST, in-process, fully typed, with no HTTP round-trip.
 - [REST API](https://kernelcms.com/docs/rest-api): Auto-generated endpoints for every collection and global, access-checked end to end.
 - [Querying & the Where syntax](https://kernelcms.com/docs/querying): The operator set, sorting, pagination, and how default sort is resolved.
