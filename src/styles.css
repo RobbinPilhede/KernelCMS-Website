@@ -1,3 +1,7 @@
+@import 'tailwindcss';
+/* Dark mode keyed on the .dark class (set on <html>), matching the design tokens. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* =====================================================================
    KernelCMS - site design system
    Faithfully extends the admin theme tokens (apps/admin/src/styles.css):

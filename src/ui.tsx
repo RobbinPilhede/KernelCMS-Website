@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ICONS } from './icons'
 import { markSVG, coverSVG, highlight, getTheme, applyTheme } from './lib'
 import { DOCS, GUIDES, BLOG } from './content'
+import { btn, btnPrimary, btnSm, iconLink } from './cls'
 
 const html = (s: string) => ({ __html: s })
 
@@ -16,9 +17,9 @@ export function Mark({ cls }: { cls?: string }) {
 }
 export function Logo() {
   return (
-    <Link to="/" className="logo">
+    <Link to="/" className="inline-flex items-center gap-[11px] leading-none text-inherit">
       <Mark />
-      <span className="logo-word">Kernel<b>CMS</b></span>
+      <span className="font-[family-name:var(--display)] text-xl font-light tracking-[0.03em] leading-none text-[var(--text)]">Kernel<b className="font-medium">CMS</b></span>
     </Link>
   )
 }
@@ -53,33 +54,37 @@ export function Topbar() {
     onScroll(); window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+  const navLink = 'px-3 py-2 rounded-lg text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]'
   return (
-    <header className={`topbar${scrolled ? ' scrolled' : ''}`} id="topbar">
-      <div className="topbar-inner">
+    <header className="sticky top-[14px] z-[60] mt-[14px] px-[clamp(18px,4vw,36px)]" id="topbar">
+      <div className={`flex items-center gap-[18px] max-w-[var(--maxw)] mx-auto py-[9px] pl-4 pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
         <Logo />
-        <nav className="nav-links">
-          <Link to="/docs" activeProps={{ className: 'active' }}>Docs</Link>
-          <Link to="/guides" activeProps={{ className: 'active' }}>Guides</Link>
-          <Link to="/blog" activeProps={{ className: 'active' }}>Blog</Link>
+        <nav className="flex items-center gap-1 ml-[14px] max-[920px]:hidden">
+          <Link to="/docs" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Docs</Link>
+          <Link to="/guides" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Guides</Link>
+          <Link to="/blog" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Blog</Link>
         </nav>
-        <div className="nav-spacer" />
-        <div className="nav-actions">
-          <button className="cmdk-trigger" onClick={openCmdk}><Icon name="search" /><span className="label">Search</span><kbd>⌘K</kbd></button>
+        <div className="flex-1" />
+        <div className="flex items-center gap-[10px]">
+          <button className="inline-flex items-center gap-2 px-[10px] py-[7px] rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[13px] cursor-pointer transition-[border-color,color] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--text)_22%,var(--border))] [&>svg]:w-[15px] [&>svg]:h-[15px]" onClick={openCmdk}>
+            <Icon name="search" /><span className="max-[920px]:hidden">Search</span>
+            <kbd className="font-[family-name:var(--mono)] text-[11px] px-[5px] py-px rounded-[5px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--muted)]">⌘K</kbd>
+          </button>
           <ThemeToggle />
-          <a className="icon-link" href={GITHUB} target="_blank" rel="noopener" aria-label="GitHub"><Icon name="github" /></a>
-          <Link className="btn primary sm" to="/docs/$slug" params={{ slug: 'quickstart' }}>Get started</Link>
-          <button className="icon-link nav-toggle" onClick={() => setOpen(true)} aria-label="Menu"><Icon name="menu" /></button>
+          <a className={iconLink} href={GITHUB} target="_blank" rel="noopener" aria-label="GitHub"><Icon name="github" /></a>
+          <Link className={`${btnPrimary} ${btnSm}`} to="/docs/$slug" params={{ slug: 'quickstart' }}>Get started</Link>
+          <button className={`${iconLink} hidden max-[920px]:grid`} onClick={() => setOpen(true)} aria-label="Menu"><Icon name="menu" /></button>
         </div>
       </div>
       {open && (
-        <div className="drawer open" onClick={(e) => { if ((e.target as HTMLElement).closest('[data-close]') || (e.target as HTMLElement).classList.contains('drawer-scrim')) setOpen(false) }}>
-          <div className="drawer-scrim" />
-          <div className="drawer-panel">
-            <Link to="/docs" data-close>Docs</Link>
-            <Link to="/guides" data-close>Guides</Link>
-            <Link to="/blog" data-close>Blog</Link>
-            <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className="btn primary" data-close style={{ marginTop: 8, justifyContent: 'center' }}>Get started</Link>
-            <a href={GITHUB} target="_blank" rel="noopener" data-close>GitHub ↗</a>
+        <div className="fixed inset-0 z-[90]" onClick={(e) => { if ((e.target as HTMLElement).closest('[data-close]') || (e.target as HTMLElement).dataset.scrim) setOpen(false) }}>
+          <div className="absolute inset-0 bg-[rgba(8,10,16,0.5)] backdrop-blur-[2px]" data-scrim="1" />
+          <div className="absolute right-0 top-0 bottom-0 w-[min(82vw,340px)] bg-[var(--surface)] border-l border-[var(--border)] p-[18px] flex flex-col gap-[6px]">
+            {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog']].map(([t, to]) => (
+              <Link key={to} to={to} data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">{t}</Link>
+            ))}
+            <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className={`${btnPrimary} mt-2 justify-center`} data-close>Get started</Link>
+            <a href={GITHUB} target="_blank" rel="noopener" data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">GitHub ↗</a>
           </div>
         </div>
       )}
@@ -88,27 +93,32 @@ export function Topbar() {
 }
 
 export function Footer() {
+  const fcol = 'block text-[var(--muted)] text-sm py-[5px] transition-colors hover:text-[var(--text)]'
   const col = (h: string, links: [string, any][]) => (
-    <div className="footer-col" key={h}>
-      <h4>{h}</h4>
+    <div key={h}>
+      <h4 className="text-xs uppercase tracking-[0.1em] text-[var(--muted)] mb-4">{h}</h4>
       {links.map(([label, to]) =>
         typeof to === 'string' && to.startsWith('http')
-          ? <a key={label} href={to}>{label}</a>
-          : <Link key={label} to={to.to} params={to.params}>{label}</Link>)}
+          ? <a key={label} href={to} className={fcol}>{label}</a>
+          : <Link key={label} to={to.to} params={to.params} className={fcol}>{label}</Link>)}
     </div>
   )
   const L = (to: string, params?: any) => ({ to, params })
   return (
-    <footer className="footer"><div className="wrap">
-      <div className="footer-grid">
-        <div className="footer-brand"><Logo /><p>The lightweight, standalone, type-safe headless CMS that does not hijack your framework.</p></div>
-        {col('Product', [['Features', L('/')], ['Docs', L('/docs')], ['Guides', L('/guides')], ['Quickstart', L('/docs/$slug', { slug: 'quickstart' })]])}
-        {col('Resources', [['Blog', L('/blog')], ['Adapters', L('/docs/$slug', { slug: 'adapters' })], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
-        {col('Develop', [['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Migrations', L('/docs/$slug', { slug: 'migrations' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
-        {col('Community', [['GitHub', GITHUB], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
+    <footer className="border-t border-[var(--border)] mt-[clamp(64px,9vw,120px)] pt-14 pb-10">
+      <div className="w-full max-w-[var(--maxw)] mx-auto px-[clamp(18px,4vw,36px)]">
+        <div className="grid grid-cols-[1.6fr_repeat(4,1fr)] gap-10 max-[920px]:grid-cols-2 max-[920px]:gap-8">
+          <div className="max-[920px]:col-span-full"><Logo /><p className="text-[var(--muted)] text-sm max-w-[30ch] mt-4">The lightweight, standalone, type-safe headless CMS that does not hijack your framework.</p></div>
+          {col('Product', [['Features', L('/')], ['Docs', L('/docs')], ['Guides', L('/guides')], ['Quickstart', L('/docs/$slug', { slug: 'quickstart' })]])}
+          {col('Resources', [['Blog', L('/blog')], ['Adapters', L('/docs/$slug', { slug: 'adapters' })], ['CLI', L('/docs/$slug', { slug: 'cli' })], ['API reference', L('/docs/$slug', { slug: 'rest-api' })]])}
+          {col('Develop', [['Modules', L('/docs/$slug', { slug: 'modules' })], ['Access control', L('/docs/$slug', { slug: 'access-control' })], ['Migrations', L('/docs/$slug', { slug: 'migrations' })], ['Embedding', L('/guides/$slug', { slug: 'embed-nextjs' })]])}
+          {col('Community', [['GitHub', GITHUB], ['llms.txt', 'https://kernelcms.com/llms.txt'], ['Sitemap', 'https://kernelcms.com/sitemap.xml']])}
+        </div>
+        <div className="flex items-center justify-between gap-4 mt-12 pt-6 border-t border-[var(--border)] text-[var(--faint)] text-[13px] flex-wrap">
+          <span>© 2026 KernelCMS · MIT licensed core</span><span>Built on web standards · Runs on Node, edge, any container</span>
+        </div>
       </div>
-      <div className="footer-bottom"><span>© 2026 KernelCMS · MIT licensed core</span><span>Built on web standards · Runs on Node, edge, any container</span></div>
-    </div></footer>
+    </footer>
   )
 }
 
