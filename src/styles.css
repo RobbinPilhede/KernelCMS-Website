@@ -97,6 +97,7 @@
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
+html { overflow-x: hidden; }
 body {
   margin: 0;
   font-family: var(--font);
@@ -107,6 +108,15 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
+  width: 100%;
+}
+
+/* Code blocks never push the page: they scroll inside themselves on touch. */
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -136,6 +146,9 @@ h1, h2, h3, h4 { letter-spacing: -0.025em; line-height: 1.1; }
   inset: 0;
   z-index: -1;
   overflow: hidden;
+  /* Strict containment guarantees the aurora/pixel blobs can never contribute
+     to document width or scroll, on any viewport. */
+  contain: strict;
   pointer-events: none;
   background:
     radial-gradient(1200px 800px at 50% -20%, color-mix(in srgb, var(--text) 6%, transparent), transparent 70%),

@@ -804,6 +804,66 @@ ${code('ts', `afterChange: [
 ${code('ts', `afterRead: [({ doc }) => ({ ...doc, excerpt: String(doc.body).slice(0, 140) })]`)}
 ${warn(`Hooks run <em>inside</em> the access-checked pipeline. Don't use them to leak fields - field-read access still applies after <code>afterRead</code>. For heavy work in <code>afterChange</code>, enqueue a <a href="#/docs/background-jobs">background job</a> rather than blocking the write.`)}`
     },
+    {
+      slug: 'semantic-search', group: 'Data & APIs', nav: 'Semantic search', title: 'Semantic & hybrid search',
+      lead: 'RAG-native retrieval: bring any embedder, and your CMS becomes the vector knowledge base - access-checked, real-time, and hybrid-ranked.',
+      html: `
+<p>On top of adapter-based full-text search, KernelCMS embeds your content into a vector store on every write, so you can query it by <strong>meaning</strong> (semantic) and by a <strong>fusion of keyword + meaning</strong> (hybrid). Both run through the same access-checked read path as every other operation - a vector hit for a document the caller can't read is dropped, never leaked. The point: your CMS <em>is</em> your RAG knowledge base, instead of a CMS plus a sync Lambda plus a separate vector database you keep in step by hand.</p>
+
+<h2 id="embedder">Configure a pluggable embedder</h2>
+<p>KernelCMS has <strong>no embedding dependency of its own</strong>. You supply an <code>embed</code> function - the whole contract is <code>string[] → number[][]</code> - so OpenAI, Cohere, Voyage, or a local model all work the same way:</p>
+${code('ts', `import OpenAI from 'openai'
+const openai = new OpenAI() // reads OPENAI_API_KEY from the environment
+
+export default defineConfig({
+  search: memorySearch(),       // full-text; hybrid fuses this with the vector store
+  embeddings: {
+    embed: async (texts) => {
+      const res = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: texts,
+      })
+      return res.data.map((d) => d.embedding)
+    },
+    dimensions: 1536,           // optional; helps a backing store size its column
+  },
+  collections: [/* … */],
+})`)}
+${note(`When <code>embeddings</code> is set, <code>vector</code> defaults to the built-in in-process <code>memoryVector()</code> (cosine store). It's ideal for development; a pgvector-backed adapter is the documented production follow-up - the interface is ready, the adapter is not yet shipped.`)}
+
+<h2 id="enable">Enable semantic on a collection</h2>
+<p>Full-text needs <code>search: { fields }</code>. Add <code>semantic: true</code> to also embed those fields - on <strong>every write</strong>, on the same real-time path as the full-text index:</p>
+${code('ts', `{
+  slug: 'posts',
+  access: { read: () => true },
+  search: { fields: ['title', 'body'], semantic: true },
+  fields: [/* … */],
+}`)}
+<p>Indexing is real-time: a write re-embeds and upserts the document's vector, a delete removes it. There is no batch job and no stale window - a governance requirement for AI agents, which must never retrieve a deleted or stale document.</p>
+
+<h2 id="query">Semantic vs. hybrid</h2>
+<p>Two Local API ops, each returning <code>{ docs }</code> already loaded through the access-checked read path:</p>
+${code('ts', `// Pure vector top-K - best for paraphrased, conversational queries.
+const { docs } = await kernel.semanticSearch({
+  collection: 'posts',
+  query: 'how do I deploy to a single container?',
+  limit: 10,                          // clamped to a max of 100
+  filter: { _status: 'published' },   // validated against real columns
+  req,                                // the request principal - access is enforced
+})
+
+// Hybrid - full-text + vector, fused with Reciprocal Rank Fusion (RRF, k = 60).
+const { docs } = await kernel.hybridSearch({
+  collection: 'posts', query: 'kernel deploy container', limit: 10, req,
+})`)}
+<p><strong>Hybrid</strong> is the 2026 default for most retrieval: it runs both searches and fuses their rankings so you get keyword precision (exact terms, names, codes) <em>and</em> semantic recall (synonyms, paraphrase) in one ranked list, no blend weight to tune. Reach for <strong>semantic</strong> alone when queries are conversational and the user's words won't match the document's. Both degrade gracefully - semantic-only when a collection has no full-text fields, full-text-only when no embedder is configured.</p>
+
+<h2 id="rest">The REST surface</h2>
+<p>The same two ops over HTTP, access-checked to the request principal:</p>
+${code('bash', `curl "http://localhost:3000/api/posts/semantic?q=how%20do%20I%20deploy&limit=10"
+curl "http://localhost:3000/api/posts/hybrid?q=how%20do%20I%20deploy"`)}
+${warn(`Results <strong>always</strong> go through the access-checked read path: a vector hit for a document the caller can't read is dropped, never leaked. <code>limit</code> is clamped (max 100) and <code>filter</code> is validated to real columns (no injection / prototype pollution). An embed failure is logged - never with the text or key - and never breaks a content write.`)}`
+    },
 
     // ---- Build your own -----------------------------------------------------
     {

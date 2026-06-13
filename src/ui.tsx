@@ -59,9 +59,9 @@ export function Topbar() {
   }, [])
   const navLink = 'px-3 py-2 rounded-lg text-sm font-medium text-[var(--muted)] transition-colors hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]'
   return (
-    <header className="sticky top-[14px] z-[60] mt-[14px] px-[clamp(18px,4vw,36px)]" id="topbar">
-      <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-[18px] max-w-[var(--maxw)] mx-auto py-[9px] pl-4 pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
-        <div className="flex items-center justify-self-start"><Logo /></div>
+    <header className="sticky top-[10px] sm:top-[14px] z-[60] mt-[10px] sm:mt-[14px] px-[clamp(14px,4vw,36px)]" id="topbar">
+      <div className={`grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-[18px] max-w-[var(--maxw)] mx-auto py-2 sm:py-[9px] pl-3 pr-2 sm:pl-4 sm:pr-[10px] rounded-2xl border bg-[var(--glass)] [backdrop-filter:blur(16px)_saturate(1.1)] transition-[box-shadow,border-color] duration-200 ${scrolled ? 'border-[color-mix(in_srgb,var(--text)_12%,var(--glass-border))] shadow-[0_14px_40px_-18px_rgba(0,0,0,0.45)]' : 'border-[var(--glass-border)] shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]'}`}>
+        <div className="flex items-center justify-self-start min-w-0"><Logo /></div>
         <nav className="flex items-center gap-1 justify-self-center max-[920px]:hidden">
           <Link to="/docs" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Docs</Link>
           <Link to="/guides" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Guides</Link>
@@ -71,26 +71,36 @@ export function Topbar() {
           <Link to="/mcp" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>MCP</Link>
           <Link to="/prompts" className={navLink} activeProps={{ className: '!text-[var(--text)]' }}>Prompts</Link>
         </nav>
-        <div className="flex items-center gap-[10px] justify-self-end">
-          <button className="inline-flex items-center gap-2 px-[10px] py-[7px] rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[13px] cursor-pointer transition-[border-color,color] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--text)_22%,var(--border))] [&>svg]:w-[15px] [&>svg]:h-[15px]" onClick={openCmdk}>
+        <div className="flex items-center gap-1.5 sm:gap-[10px] justify-self-end">
+          <button className="hidden sm:inline-flex items-center gap-2 px-[10px] py-[7px] rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[13px] cursor-pointer transition-[border-color,color] hover:text-[var(--text)] hover:border-[color-mix(in_srgb,var(--text)_22%,var(--border))] [&>svg]:w-[15px] [&>svg]:h-[15px]" onClick={openCmdk}>
             <Icon name="search" /><span className="max-[920px]:hidden">Search</span>
             <kbd className="font-[family-name:var(--mono)] text-[11px] px-[5px] py-px rounded-[5px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-[var(--muted)]">⌘K</kbd>
           </button>
           <ThemeToggle />
-          <a className={iconLink} href={GITHUB} target="_blank" rel="noopener" aria-label="GitHub"><Icon name="github" /></a>
-          <Link className={`${btnPrimary} ${btnSm}`} to="/docs/$slug" params={{ slug: 'quickstart' }}>Get started</Link>
+          <a className={`${iconLink} hidden sm:grid`} href={GITHUB} target="_blank" rel="noopener" aria-label="GitHub"><Icon name="github" /></a>
+          <Link className={`${btnPrimary} ${btnSm} hidden sm:inline-flex`} to="/docs/$slug" params={{ slug: 'quickstart' }}>Get started</Link>
           <button className={`${iconLink} hidden max-[920px]:grid`} onClick={() => setOpen(true)} aria-label="Menu"><Icon name="menu" /></button>
         </div>
       </div>
       {open && (
         <div className="fixed inset-0 z-[90]" onClick={(e) => { if ((e.target as HTMLElement).closest('[data-close]') || (e.target as HTMLElement).dataset.scrim) setOpen(false) }}>
           <div className="absolute inset-0 bg-[rgba(8,10,16,0.5)] backdrop-blur-[2px]" data-scrim="1" />
-          <div className="absolute right-0 top-0 bottom-0 w-[min(82vw,340px)] bg-[var(--surface)] border-l border-[var(--border)] p-[18px] flex flex-col gap-[6px]">
+          <div className="absolute right-0 top-0 bottom-0 w-[min(82vw,340px)] bg-[var(--surface)] border-l border-[var(--border)] p-[18px] flex flex-col gap-[6px] [animation:slidein_.2s_var(--ease-out)] overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <Logo />
+              <button data-close className={iconLink} aria-label="Close menu"><Icon name="x" /></button>
+            </div>
+            <button
+              onClick={() => { setOpen(false); openCmdk() }}
+              className="flex items-center gap-3 px-[14px] py-3 min-h-[44px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] text-[14px] mb-1 [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            >
+              <Icon name="search" /> Search<kbd className="ml-auto font-[family-name:var(--mono)] text-[11px] px-[5px] py-px rounded-[5px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)]">⌘K</kbd>
+            </button>
             {[['Docs', '/docs'], ['Guides', '/guides'], ['Blog', '/blog'], ['About', '/about'], ['Safety', '/safety'], ['MCP', '/mcp'], ['Prompts', '/prompts']].map(([t, to]) => (
-              <Link key={to} to={to} data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">{t}</Link>
+              <Link key={to} to={to} data-close className="px-[14px] py-3 min-h-[44px] flex items-center rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">{t}</Link>
             ))}
             <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className={`${btnPrimary} mt-2 justify-center`} data-close>Get started</Link>
-            <a href={GITHUB} target="_blank" rel="noopener" data-close className="px-[14px] py-3 rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">GitHub ↗</a>
+            <a href={GITHUB} target="_blank" rel="noopener" data-close className="px-[14px] py-3 min-h-[44px] flex items-center rounded-[10px] font-medium text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]">GitHub ↗</a>
           </div>
         </div>
       )}
