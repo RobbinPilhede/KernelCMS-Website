@@ -10,13 +10,13 @@ const wrap = 'w-full max-w-[var(--maxw)] mx-auto px-[clamp(18px,4vw,36px)]'
 
 const PRACTICES: [string, string, string][] = [
   ['shield', 'Deny by default', 'Every collection denies all access until you declare what is allowed. Nothing is public by accident; the doctor and admin flag any collection with no access rules.'],
-  ['lock', 'Row- and field-level control', 'Access rules return a boolean or a row filter, at the collection and the field level. A caller only ever sees the rows and the fields they are allowed to, on every read, update, and delete.'],
-  ['shield', 'Privilege-escalation guard', 'On auth collections, authority fields (roles, permissions, is_admin) are admin-write by default. A user who can edit their own record still cannot promote themselves.'],
-  ['lock', 'Hardened authentication', 'Scrypt password hashing, HttpOnly SameSite cookies, a same-origin check on cookie-authed writes, no user-enumeration on reset and verify flows, and TOTP two-factor built on node:crypto.'],
+  ['layers', 'Row- and field-level control', 'Access rules return a boolean or a row filter, at the collection and the field level. A caller only ever sees the rows and the fields they are allowed to, on every read, update, and delete.'],
+  ['lock', 'Privilege-escalation guard', 'On auth collections, authority fields (roles, permissions, is_admin) are admin-write by default. A user who can edit their own record still cannot promote themselves.'],
+  ['check', 'Hardened authentication', 'Scrypt password hashing, HttpOnly SameSite cookies, a same-origin check on cookie-authed writes, no user-enumeration on reset and verify flows, and TOTP two-factor built on node:crypto.'],
   ['terminal', 'No injection', 'SQL identifiers are validated and every value is parameterized. There is no string concatenation into queries, anywhere.'],
-  ['feather', 'Secrets stay secret', 'Passwords are never returned. Reset, verification, and TOTP secrets never leave the server and are kept out of the OpenAPI spec. Nothing sensitive appears in errors, logs, or client code.'],
+  ['hash', 'Secrets stay secret', 'Passwords are never returned. Reset, verification, and TOTP secrets never leave the server and are kept out of the OpenAPI spec. Nothing sensitive appears in errors, logs, or client code.'],
   ['sparkles', 'One model for humans and agents', 'AI agents enter through the same access pipeline as people and inherit the same row- and field-level rules. An agent can never read or write something a human in its role could not.'],
-  ['gauge', 'Migrations cannot lose data', 'kernel migrate only creates tables and adds columns; it never drops or retypes. Destructive changes are reported by migrate:status and applied by hand, never silently.'],
+  ['db', 'Migrations cannot lose data', 'kernel migrate only creates tables and adds columns; it never drops or retypes. Destructive changes are reported by migrate:status and applied by hand, never silently.'],
 ]
 
 function Safety() {
@@ -28,7 +28,7 @@ function Safety() {
   return (
     <main>
       <section className="pt-[clamp(56px,8vw,104px)] pb-[clamp(32px,5vw,56px)] text-center"><div className={`${wrap} max-w-[760px]`}>
-        <div className="inline-grid place-items-center w-16 h-16 rounded-[18px] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] [&>svg]:w-7 [&>svg]:h-7"><Icon name="shield" /></div>
+        <div className="inline-grid place-items-center w-16 h-16 rounded-[18px] bg-[color-mix(in_srgb,var(--text)_7%,transparent)] [&_svg]:w-7 [&_svg]:h-7"><Icon name="shield" /></div>
         <p className="font-[family-name:var(--mono)] text-[12.5px] text-[var(--muted)] mt-7 mb-4">// safety &amp; security</p>
         <h1 className="text-[clamp(2.1rem,1.4rem+2.8vw,3.4rem)] font-semibold tracking-[-0.03em] leading-[1.05] max-w-[20ch] mx-auto">Security you can verify, not just trust.</h1>
         <p className="text-[clamp(1.05rem,0.9rem+0.6vw,1.25rem)] leading-[1.7] text-[var(--muted)] max-w-[60ch] mx-auto mt-6">
@@ -42,7 +42,7 @@ function Safety() {
         <div className="grid grid-cols-2 gap-px bg-[var(--border)] border border-[var(--border)] rounded-[16px] overflow-hidden max-[760px]:grid-cols-1">
           {PRACTICES.map(([icon, title, desc]) => (
             <div key={title} className="bg-[var(--surface)] p-[28px] flex flex-col gap-3 transition-colors hover:bg-[var(--surface-2)]">
-              <div className="grid place-items-center w-11 h-11 rounded-xl bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] [&>svg]:w-[21px] [&>svg]:h-[21px]"><Icon name={icon} /></div>
+              <div className="grid place-items-center w-11 h-11 rounded-xl bg-[color-mix(in_srgb,var(--text)_7%,transparent)] text-[var(--text)] [&_svg]:w-[21px] [&_svg]:h-[21px]"><Icon name={icon} /></div>
               <h2 className="text-[17px] font-semibold">{title}</h2>
               <p className="text-[var(--muted)] text-[14.5px] leading-[1.55] text-pretty m-0">{desc}</p>
             </div>
