@@ -405,6 +405,57 @@ ${code('ts', `await kernel.find({
 ${note(`<code>fallbackLocale</code> can be a locale string or <code>false</code> to disable fallback for a single call and see exactly which values are missing.`)}`
     },
 
+    {
+      slug: 'personalization', group: 'Content modeling', nav: 'Personalization & A/B', title: 'Personalization & A/B experiments',
+      lead: 'Audience variants from the same typed model - content that adapts to who is asking, plus built-in A/B testing.',
+      html: `
+<p>A <code>personalized</code> field works exactly like a <code>localized</code> one, but keyed by <strong>audience segment</strong> instead of locale. It stores a <code>{ [segment]: value }</code> map and resolves to the segment on the request - so one model serves many micro-experiences without a separate personalization platform.</p>
+
+<h2 id="audiences">Configure audiences</h2>
+${code('ts', `export default defineConfig({
+  audiences: {
+    segments: ['default', 'vip', 'returning'],
+    default: 'default', // must be one of segments
+  },
+  // …
+})`)}
+
+<h2 id="mark">Mark fields personalized</h2>
+${code('ts', `{ name: 'headline', type: 'text',     personalized: true },
+{ name: 'offer',    type: 'richText', personalized: true }`)}
+<p>A personalized field stores one value per segment. Non-personalized fields are shared across all audiences.</p>
+${warn(`A field cannot be both <code>localized</code> and <code>personalized</code> - that combination is rejected at config load. Personalized fields also require <code>audiences</code> to be configured.`)}
+
+<h2 id="read-write">Reading & writing a segment</h2>
+<p>Over REST, pass <code>?audience=vip</code>; from the Local API, set <code>req.audience</code>. A personalized field resolves to that segment's value, falls back to the <strong>default segment</strong>, then <code>null</code>.</p>
+${code('ts', `// Read the VIP variant
+await kernel.find({ collection: 'posts', req: { audience: 'vip' } })
+
+// Write merges into the 'vip' slot WITHOUT clobbering other segments
+await kernel.update({ collection: 'posts', id, req: { audience: 'vip' },
+  data: { headline: 'Welcome back' } })`)}
+${note(`An unknown or untrusted <code>audience</code> is only honored if it is a configured segment - otherwise it resolves to the default. Per-segment writes merge, so no other variant is lost.`)}
+
+<h2 id="experiments">A/B experiments</h2>
+<p>Declare experiments whose variants are configured segments. <code>kernel.assignVariant</code> does deterministic, sticky bucketing of a visitor <code>key</code> (FNV hash, weight-proportional) - the same key always gets the same variant.</p>
+${code('ts', `export default defineConfig({
+  audiences: { segments: ['default', 'a', 'b'], default: 'default' },
+  experiments: [
+    { slug: 'cta', variants: ['a', 'b'], weights: [50, 50], seed: 1 },
+  ],
+})`)}
+${code('ts', `const { variant } = kernel.assignVariant({ experiment: 'cta', key: visitorId })
+// the assigned variant IS a segment - serve its content
+const doc = await kernel.findByID({ collection: 'pages', id, req: { audience: variant } })`)}
+<p>Over REST the assignment endpoint is public (an assignment is not secret):</p>
+${code('bash', `curl -X POST "http://localhost:3000/api/_experiments/cta/assign" -d '{"key":"visitor-123"}'
+# → { "experiment": "cta", "variant": "a", "segment": "a" }`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`Personalized fields still go through <strong>field read-access</strong>: a read-denied personalized field is stripped for every audience - variant resolution never bypasses access checks.`)}
+${warn(`Segment keys are guarded against <code>__proto__</code> / <code>constructor</code> / <code>prototype</code>, so a crafted audience can't pollute the prototype. Bucketing records only a <strong>hash of the key</strong> - no raw visitor key or PII at rest. Red-teamed to Risk LOW.`)}`
+    },
+
     // ---- Access & auth ------------------------------------------------------
     {
       slug: 'access-control', group: 'Access & auth', nav: 'Access control', title: 'Access control',
@@ -2415,6 +2466,7 @@ npx kernel migrate          # apply the additive plan`)}
     'relationships': { metaTitle: 'Relationships & Joins | KernelCMS Content Model', metaDesc: 'Single, many, and polymorphic relationships in KernelCMS, plus virtual reverse-relationship join fields, population depth, and access-checked related data.' },
     'computed-fields': { metaTitle: 'Computed Fields | KernelCMS Derived Values', metaDesc: 'Computed fields in KernelCMS: virtual (derived on read) vs stored (derived on write and sortable). Keep business logic in one place, read-only in the admin.' },
     'localization': { metaTitle: 'Localization | KernelCMS Multi-Language Content', metaDesc: 'Per-field localization in KernelCMS: configure locales, mark fields localized, and read or write a locale with fallbacks. Build multi-language content models.' },
+    'personalization': { metaTitle: 'Personalization & A/B | KernelCMS Audience Variants', metaDesc: 'Personalize content in KernelCMS with per-field audience variants and built-in, deterministic A/B experiments - all from the same typed model. Access-checked and PII-free.' },
     'access-control': { metaTitle: 'Access Control | KernelCMS Headless CMS Security', metaDesc: 'Deny-by-default access control in KernelCMS: boolean or row-level rules at the collection and field level, plus the privilege-escalation guard.' },
     'authentication': { metaTitle: 'Authentication | KernelCMS Headless CMS Auth', metaDesc: 'Auth in KernelCMS: email/password auth collections, sessions, API keys, password reset, email verification, TOTP two-factor, and OAuth with Google and GitHub.' },
     'local-api': { metaTitle: 'The Local API | KernelCMS Typed In-Process API', metaDesc: 'The KernelCMS Local API: the same create, read, update, and delete operations as REST and GraphQL, in-process and fully typed, with no HTTP round-trip.' },
