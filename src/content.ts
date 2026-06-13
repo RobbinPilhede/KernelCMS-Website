@@ -1306,6 +1306,78 @@ await kernel.restoreVersion({ collection: 'posts', id, versionId: docs[1].id })`
 ${note(`Saves can be flagged <code>autosave: true</code> so the version snapshot records that it was auto-saved - the admin uses this to distinguish auto-saved drafts from manual ones.`)}`
     },
     {
+      slug: 'time-machine', group: 'Media & operations', nav: 'Time-machine', title: 'Content time-machine',
+      lead: 'Read, diff, and restore your content at any point in time - git-for-content, built on the version history KernelCMS already keeps.',
+      html: `
+<p>Every collection with <a href="#/docs/versions-and-drafts">versions</a> enabled already snapshots each write. The time-machine turns that history into a queryable surface: read a document - or a whole list - as it existed at any past instant, walk its complete change timeline, diff any two points field-by-field, and revert in one call. No extra storage, no second access path.</p>
+${warn(`Every time-machine operation requires <code>versions</code> on the collection. A point-in-time read or restore on a collection without it raises a <code>BadRequestError</code> - there is no history to reconstruct from.`)}
+
+<h2 id="as-of">Point-in-time reads (asOf)</h2>
+<p>Pass <code>asOf</code> (an ISO-8601 timestamp) to <code>findByID</code> or <code>find</code> and the engine reconstructs the document(s) from history - the latest snapshot whose <code>createdAt</code> is <code>&lt;= asOf</code>. Omit <code>asOf</code> and you get the current document, unchanged:</p>
+${code('ts', `// a single document, as it stood at an instant
+const post = await kernel.findByID({
+  collection: 'posts', id, asOf: '2025-12-31T23:59:59Z',
+})
+
+// null when the document did not exist yet at that instant
+await kernel.findByID({ collection: 'posts', id, asOf: '2020-01-01T00:00:00Z' }) // -> null
+
+// a point-in-time LIST - honours where / limit / page
+const { docs } = await kernel.find({
+  collection: 'posts', asOf: '2026-01-15T00:00:00Z',
+  where: { author: { equals: authorId } }, limit: 20,
+})`)}
+
+<h2 id="history">The history timeline</h2>
+<p><code>history</code> returns the full change timeline for one document, oldest -> newest. <code>changedFields</code> are the fields that differ from the previous snapshot (all of them on the first, create snapshot):</p>
+${code('ts', `const timeline = await kernel.history({ collection: 'posts', id })
+// Array<{ versionId, at, by, byType, status, autosave, changedFields }>`)}
+${note(`<code>by</code> / <code>byType</code> attribute each snapshot to a <code>user</code> or <code>agent</code>, so "show me what the agent changed" is a filter over the timeline. <code>status</code> is the <code>_status</code> at that point on a drafts-enabled collection.`)}
+
+<h2 id="diff">Field-level diffs</h2>
+<p><code>diffVersions</code> compares two points and returns only the changed fields, each as a <code>{ from, to }</code> pair. <code>from</code> and <code>to</code> are independent - each may be a <strong>versionId</strong> <em>or</em> an <strong>ISO timestamp</strong> (resolved to the snapshot at-or-before it):</p>
+${code('ts', `// two version ids
+await kernel.diffVersions({
+  collection: 'posts', id,
+  from: timeline[0].versionId, to: timeline[2].versionId,
+})
+// -> { title: { from: 'Draft', to: 'Hello world' }, body: { from, to } }
+
+// or two instants - "what changed between last Monday and now"
+await kernel.diffVersions({
+  collection: 'posts', id,
+  from: '2026-06-08T00:00:00Z', to: '2026-06-13T00:00:00Z',
+})`)}
+
+<h2 id="restore">Restore as-of</h2>
+<p><code>restoreAsOf</code> reverts a document to its state at a past instant by writing that historical content back through the <strong>normal update path</strong>:</p>
+${code('ts', `await kernel.restoreAsOf({ collection: 'posts', id, asOf: '2026-06-01T00:00:00Z' })`)}
+<p>The guardrails all follow from "it's a normal update":</p>
+${warn(`<ul>
+<li><strong>Content fields only.</strong> <code>_status</code> and system columns are excluded from the restored payload, so a restore writes <em>content</em> - it can never flip a draft to published. A restore is not a publish.</li>
+<li><strong>No access bypass.</strong> It runs the validated update path with no <code>overrideAccess</code>, so the caller's update access, field-level access, and validation all apply.</li>
+<li><strong>The agent draft-only brake still holds.</strong> An <a href="#/docs/mcp">AI agent</a> can restore content but, like any other write, cannot use a restore to publish.</li>
+<li><strong>It records a new version.</strong> The revert is itself a snapshot at the head of the timeline - history is append-only, so you can always restore forward again.</li>
+</ul>`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Reads take <code>asOf</code> as a query parameter; the restore route is gated exactly like a normal update:</p>
+${code('http', `GET  /api/:collection/:id?asOf=<iso>          # one document, as of an instant
+GET  /api/:collection?asOf=<iso>              # point-in-time list
+GET  /api/:collection/:id/history             # the change timeline
+GET  /api/:collection/:id/diff?from=&to=      # field-level diff (versionId or iso)
+POST /api/:collection/:id/restore-as-of?asOf= # revert (gated like an update)`)}
+
+<h2 id="security">History reads exactly like the present</h2>
+<p>Time-travel is <strong>not</strong> a way around access control. Every historical read, diff, and timeline runs through the <em>same</em> read-check and field stripping as a live read, evaluated against the caller's <strong>current</strong> access - there is no traveling back to a moment when access was wider:</p>
+${tip(`<ul>
+<li>A caller who cannot read the document <strong>now</strong> cannot read its <code>asOf</code> state, its <code>history</code>, or any <code>diff</code> of it. Revoked access stays revoked for the past too.</li>
+<li>A read-denied field never appears in an <code>asOf</code> document, in a snapshot's <code>changedFields</code>, or in a <code>diff</code>.</li>
+<li>Historical <strong>draft</strong> states are hidden unless you pass <code>draft: true</code> - the same rule as a live read.</li>
+<li><code>restoreAsOf</code> writes through the normal validated update with no <code>overrideAccess</code>, so it can never write content the caller couldn't write directly.</li>
+</ul>`)}`
+    },
+    {
       slug: 'caching-and-search', group: 'Media & operations', nav: 'Caching & search', title: 'Caching & search',
       lead: 'Read-through caching and access-checked full-text search, both adapter-based.',
       html: `
