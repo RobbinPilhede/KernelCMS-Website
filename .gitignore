@@ -8,3 +8,4 @@ Thumbs.db
 # temp verification artifacts
 _*.png
 _*.mjs
+_*.txt

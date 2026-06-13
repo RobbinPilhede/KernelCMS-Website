@@ -23,6 +23,7 @@ function Safety() {
   useHead(
     'Safety & security - KernelCMS',
     'How KernelCMS keeps your content safe: deny-by-default access, row- and field-level control, hardened auth, no injection, and the same access model for humans and AI agents.',
+    { keywords: ['CMS security', 'headless CMS access control', 'deny by default', 'field-level permissions', 'responsible disclosure'] },
   )
   return (
     <main>

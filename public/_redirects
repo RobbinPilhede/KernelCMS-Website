@@ -1,0 +1,5 @@
+# SPA deep-link fallback (Netlify / Cloudflare Pages).
+# Existing static files (sitemap.xml, robots.txt, /assets, /og, /brand) are
+# served first; only unknown paths fall back to the app shell so every
+# crawlable route (e.g. /docs/installation, /blog/kernelcms-vs-payload) resolves.
+/*    /index.html    200

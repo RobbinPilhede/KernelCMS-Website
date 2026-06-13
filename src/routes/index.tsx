@@ -4,12 +4,38 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { highlight } from '../lib'
 import { HOME_SEO } from '../content'
-import { Icon, DemoPlayer, NpmStats, useHead } from '../ui'
+import { Icon, DemoPlayer, NpmStats, useHead, SITE_URL } from '../ui'
 import { btn, btnPrimary, btnGhost } from '../cls'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 const wrap = 'w-full max-w-[var(--maxw)] mx-auto px-[clamp(18px,4vw,36px)]'
+
+const HOME_JSONLD = [
+  {
+    '@type': 'SoftwareApplication',
+    name: 'KernelCMS',
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Node.js (Linux, macOS, Windows)',
+    description: HOME_SEO.description,
+    url: SITE_URL,
+    softwareRequirements: 'Node.js 22+',
+    license: 'https://opensource.org/licenses/MIT',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    publisher: { '@type': 'Organization', name: 'KernelCMS', url: SITE_URL },
+  },
+  {
+    '@type': 'VideoObject',
+    name: 'Add a backend to any website with KernelCMS and Claude Code',
+    description:
+      'A developer pastes a prompt into Claude Code to add a backend to a website with KernelCMS. Claude models the content, creates a kernel.config.ts, installs KernelCMS, and wires the frontend to the API, then the no-code admin publishes a new item live.',
+    thumbnailUrl: [SITE_URL + '/og/default.png'],
+    uploadDate: '2026-06-13',
+    contentUrl: SITE_URL + '/assets/video/demo.webm',
+    embedUrl: SITE_URL + '/',
+    publisher: { '@type': 'Organization', name: 'KernelCMS', url: SITE_URL },
+  },
+]
 const eyebrow = 'font-[family-name:var(--mono)] text-[12.5px] text-[var(--muted)] m-0 mb-5 [&_.c]:text-[var(--faint)]'
 const leadH2 = 'text-[clamp(1.6rem,1.1rem+1.8vw,2.3rem)] font-semibold mt-3 tracking-[-0.025em]'
 
@@ -97,7 +123,10 @@ const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({
 const Eyebrow = ({ children }: any) => <p className={eyebrow}><span className="c">//</span> {children}</p>
 
 function Home() {
-  useHead(HOME_SEO.title, HOME_SEO.description)
+  useHead(HOME_SEO.title, HOME_SEO.description, {
+    keywords: ['add a backend to any site', 'CMS for AI-generated sites', 'backend for v0 Lovable Bolt Cursor', 'agent-native CMS', 'best headless CMS'],
+    jsonld: HOME_JSONLD,
+  })
   const [tab, setTab] = useState('config')
   const langs = { config: 'ts', rest: 'http', local: 'ts' }
   return (

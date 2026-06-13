@@ -1,6 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck -- UI components ported from the vanilla site
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { ICONS } from './icons'
 import { markSVG, coverSVG, highlight, getTheme, applyTheme } from './lib'
@@ -10,10 +10,10 @@ import { btn, btnPrimary, btnSm, iconLink } from './cls'
 const html = (s: string) => ({ __html: s })
 
 export function Icon({ name }: { name: string }) {
-  return <span style={{ display: 'inline-flex' }} dangerouslySetInnerHTML={html(ICONS[name] || '')} />
+  return <span aria-hidden="true" style={{ display: 'inline-flex' }} dangerouslySetInnerHTML={html(ICONS[name] || '')} />
 }
 export function Mark({ cls }: { cls?: string }) {
-  return <span style={{ display: 'inline-flex' }} dangerouslySetInnerHTML={html(markSVG(cls))} />
+  return <span aria-hidden="true" style={{ display: 'inline-flex' }} dangerouslySetInnerHTML={html(markSVG(cls))} />
 }
 export function Logo() {
   return (
@@ -139,12 +139,28 @@ export function Prose({ content, className }: { content: string; className?: str
   return <div ref={ref} className={className || 'prose'} dangerouslySetInnerHTML={html(withIcons)} />
 }
 
-export function CoverArt({ kind, label }: { kind?: string; label?: boolean }) {
-  return <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={html(coverSVG(kind, { label }))} />
+const COVER_ALT: Record<string, string> = {
+  payload: 'KernelCMS vs Payload comparison cover art',
+  sanity: 'KernelCMS vs Sanity comparison cover art',
+  strapi: 'KernelCMS vs Strapi comparison cover art',
+  contentful: 'KernelCMS vs Contentful comparison cover art',
+  directus: 'KernelCMS vs Directus comparison cover art',
+  brand: 'KernelCMS guide cover art',
+}
+export function CoverArt({ kind, label, alt }: { kind?: string; label?: boolean; alt?: string }) {
+  return (
+    <div role="img" aria-label={alt || COVER_ALT[kind || ''] || 'KernelCMS article cover art'}
+      style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={html(coverSVG(kind, { label }))} />
+  )
 }
 
-export function DemoPlayer({ url, caption, base, autoplay }: { url: string; caption: string; base: string; autoplay?: boolean }) {
+const DEMO_ALT: Record<string, string> = {
+  demo: 'KernelCMS demo: a developer pastes a prompt into Claude Code to add a backend to a website. Claude reads kernelcms.com, creates a kernel.config.ts with a cakes collection, installs KernelCMS, and wires the frontend to the API. The KernelCMS no-code admin then appears and a new cake is published live to the site.',
+  walkthrough: 'KernelCMS full walkthrough: turning a hardcoded, AI-generated website into one with a real backend, database, REST and GraphQL API, and a no-code React admin using a single kernel.config.ts file.',
+}
+export function DemoPlayer({ url, caption, base, autoplay, alt }: { url: string; caption: string; base: string; autoplay?: boolean; alt?: string }) {
   const ref = useRef<HTMLDivElement>(null)
+  const label = alt || DEMO_ALT[base] || caption
   useEffect(() => {
     const demo = ref.current!; const v = demo.querySelector('video') as HTMLVideoElement
     const show = () => demo.classList.add('playing')
@@ -156,10 +172,10 @@ export function DemoPlayer({ url, caption, base, autoplay }: { url: string; capt
     if (autoplay && !reduce) { v.addEventListener('playing', show, { once: true }); start() }
   }, [])
   return (
-    <div className="demo" ref={ref}>
+    <figure className="demo m-0" ref={ref} role="group" aria-label={label}>
       <div className="demo-chrome"><span /><span /><span /><div className="demo-url">{url}</div></div>
       <div className="demo-stage">
-        <video className="demo-video" muted loop playsInline preload={autoplay ? 'auto' : 'metadata'} autoPlay={autoplay}>
+        <video className="demo-video" muted loop playsInline aria-label={label} title={caption} preload={autoplay ? 'auto' : 'metadata'} autoPlay={autoplay}>
           <source src={`/assets/video/${base}.webm?v=${VIDEO_VERSION}`} type="video/webm" />
           <source src={`/assets/video/${base}.mp4?v=${VIDEO_VERSION}`} type="video/mp4" />
         </video>
@@ -170,7 +186,8 @@ export function DemoPlayer({ url, caption, base, autoplay }: { url: string; capt
           <div className="demo-cap">{caption}</div>
         </div>
       </div>
-    </div>
+      <figcaption className="sr-only">{label}</figcaption>
+    </figure>
   )
 }
 
@@ -248,19 +265,160 @@ export function NpmStats({ pkg = 'kernelcms' }: { pkg?: string }) {
   )
 }
 
-// Set document title + meta description per route (SPA head management)
-export function useHead(title: string, description: string) {
+/* =========================================================================
+   SEO head management for the SPA. Per route this sets the title, canonical,
+   description, keywords, robots, Open Graph + Twitter cards, and a JSON-LD
+   graph (BreadcrumbList + the page's main entity + optional FAQ).
+   ========================================================================= */
+export const SITE_URL = 'https://kernelcms.com'
+const SITE_NAME = 'KernelCMS'
+const TWITTER = '@kernelcms'
+const ROBOTS = 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+const BASE_KEYWORDS = [
+  'KernelCMS', 'headless CMS', 'open source CMS', 'TypeScript CMS',
+  'self-hosted CMS', 'Node.js CMS', 'config-as-code CMS', 'REST and GraphQL CMS',
+]
+
+type HeadOpts = {
+  keywords?: string[]
+  image?: string // path under /og or absolute
+  imageAlt?: string
+  type?: 'website' | 'article'
+  section?: string
+  author?: string
+  published?: string // ISO
+  modified?: string // ISO
+  breadcrumb?: { name: string; path: string }[]
+  faq?: { q: string; a: string }[]
+  jsonld?: any | any[]
+  noindex?: boolean
+}
+
+const abs = (u: string) => (u.startsWith('http') ? u : SITE_URL + (u.startsWith('/') ? u : '/' + u))
+const canonOf = (path: string) => SITE_URL + (path === '/' ? '/' : path.replace(/\/+$/, ''))
+
+function titleCaseSegment(seg: string) {
+  return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+function autoBreadcrumb(path: string): { name: string; path: string }[] {
+  const crumbs = [{ name: 'Home', path: '/' }]
+  let acc = ''
+  for (const seg of path.split('/').filter(Boolean)) {
+    acc += '/' + seg
+    crumbs.push({ name: titleCaseSegment(seg), path: acc })
+  }
+  return crumbs
+}
+function buildKeywords(title: string, extra?: string[]) {
+  const lead = title.split(/[:|(]/)[0].trim() // e.g. "KernelCMS vs Payload"
+  const set = new Set<string>([lead, ...(extra || []), ...BASE_KEYWORDS])
+  return [...set].filter(Boolean).slice(0, 12).join(', ')
+}
+
+function upsert(create: () => HTMLElement, sel: string, attr: string, val: string) {
+  let el = document.head.querySelector(sel) as HTMLElement | null
+  if (!el) { el = create(); document.head.appendChild(el) }
+  el.setAttribute(attr, val)
+  return el
+}
+const meta = (key: 'name' | 'property', val: string, content: string) =>
+  upsert(() => { const m = document.createElement('meta'); m.setAttribute(key, val); return m }, `meta[${key}="${val}"]`, 'content', content)
+const link = (rel: string, href: string) =>
+  upsert(() => { const l = document.createElement('link'); l.setAttribute('rel', rel); return l }, `link[rel="${rel}"]`, 'href', href)
+
+export function useHead(title: string, description: string, opts: HeadOpts = {}) {
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const o = JSON.stringify(opts)
   useEffect(() => {
+    const canonical = canonOf(path)
+    const type = opts.type || 'website'
+    const image = abs(opts.image || '/og/default.png')
+    const imageAlt = opts.imageAlt || title
+    const robots = opts.noindex ? 'noindex, follow' : ROBOTS
+
     document.title = title
-    const set = (sel: string, attr: string, val: string) => {
-      let el = document.head.querySelector(sel) as HTMLMetaElement | null
-      if (!el) { el = document.createElement('meta'); el.setAttribute(attr.split('=')[0], attr.split('=')[1]); document.head.appendChild(el) }
-      el.setAttribute('content', val)
+    meta('name', 'description', description)
+    meta('name', 'keywords', buildKeywords(title, opts.keywords))
+    meta('name', 'robots', robots)
+    meta('name', 'googlebot', robots)
+    link('canonical', canonical)
+
+    // Open Graph
+    meta('property', 'og:type', type)
+    meta('property', 'og:site_name', SITE_NAME)
+    meta('property', 'og:locale', 'en_US')
+    meta('property', 'og:title', title)
+    meta('property', 'og:description', description)
+    meta('property', 'og:url', canonical)
+    meta('property', 'og:image', image)
+    meta('property', 'og:image:alt', imageAlt)
+    meta('property', 'og:image:width', '1200')
+    meta('property', 'og:image:height', '630')
+
+    // Twitter
+    meta('name', 'twitter:card', 'summary_large_image')
+    meta('name', 'twitter:site', TWITTER)
+    meta('name', 'twitter:creator', TWITTER)
+    meta('name', 'twitter:title', title)
+    meta('name', 'twitter:description', description)
+    meta('name', 'twitter:image', image)
+    meta('name', 'twitter:image:alt', imageAlt)
+
+    // Article-specific OG
+    const setArticle = (k: string, v?: string) => { if (v) meta('property', k, v) }
+    if (type === 'article') {
+      setArticle('article:published_time', opts.published)
+      setArticle('article:modified_time', opts.modified || opts.published)
+      setArticle('article:author', opts.author || SITE_NAME)
+      setArticle('article:section', opts.section)
     }
-    set('meta[name="description"]', 'name=description', description)
-    set('meta[property="og:title"]', 'property=og:title', title)
-    set('meta[property="og:description"]', 'property=og:description', description)
-  }, [title, description])
+
+    // JSON-LD graph: breadcrumb + main entity + optional FAQ + extras
+    const crumbs = opts.breadcrumb || autoBreadcrumb(path)
+    const graph: any[] = [
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: crumbs.map((c, i) => ({
+          '@type': 'ListItem', position: i + 1, name: c.name, item: canonOf(c.path),
+        })),
+      },
+    ]
+    if (type === 'article') {
+      graph.push({
+        '@type': 'TechArticle',
+        headline: title,
+        description,
+        image,
+        url: canonical,
+        mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+        author: { '@type': opts.author ? 'Person' : 'Organization', name: opts.author || SITE_NAME },
+        publisher: { '@type': 'Organization', name: SITE_NAME, logo: { '@type': 'ImageObject', url: abs('/brand/kernelcms-icon.svg') } },
+        ...(opts.published ? { datePublished: opts.published } : {}),
+        ...(opts.modified || opts.published ? { dateModified: opts.modified || opts.published } : {}),
+        ...(opts.section ? { articleSection: opts.section } : {}),
+        keywords: buildKeywords(title, opts.keywords),
+        inLanguage: 'en',
+      })
+    }
+    if (opts.faq?.length) {
+      graph.push({
+        '@type': 'FAQPage',
+        mainEntity: opts.faq.map((f) => ({
+          '@type': 'Question', name: f.q,
+          acceptedAnswer: { '@type': 'Answer', text: f.a },
+        })),
+      })
+    }
+    if (opts.jsonld) graph.push(...(Array.isArray(opts.jsonld) ? opts.jsonld : [opts.jsonld]))
+
+    const ld = { '@context': 'https://schema.org', '@graph': graph }
+    let script = document.getElementById('kc-jsonld') as HTMLScriptElement | null
+    if (!script) {
+      script = document.createElement('script'); script.id = 'kc-jsonld'; script.type = 'application/ld+json'
+      document.head.appendChild(script)
+    }
+    script.textContent = JSON.stringify(ld)
+  }, [title, description, path, o])
 }
 
 // ⌘K command palette

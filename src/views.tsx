@@ -13,7 +13,7 @@ function Card({ to, params, tag, title, excerpt, meta, cover, featured, eyebrow:
   if (featured) {
     return (
       <Link to={to} params={params} className={`${base} col-[1/-1] grid grid-cols-1 min-[860px]:grid-cols-[1.15fr_1fr] items-stretch rounded-[24px] mb-2`}>
-        <div className="card-thumb !aspect-auto min-h-[320px] max-[860px]:min-h-[220px]"><CoverArt kind={cover} /></div>
+        <div className="card-thumb !aspect-auto min-h-[320px] max-[860px]:min-h-[220px]"><CoverArt kind={cover} alt={`${title} - cover art`} /></div>
         <div className="flex flex-col justify-center gap-[14px] p-[clamp(28px,4vw,48px)]">
           <span className="font-[family-name:var(--mono)] text-xs text-[var(--faint)]">{ey}</span>
           <h3 className="text-[clamp(1.5rem,1.1rem+1.6vw,2.1rem)] font-semibold tracking-[-0.02em] leading-tight">{title}</h3>
@@ -26,7 +26,7 @@ function Card({ to, params, tag, title, excerpt, meta, cover, featured, eyebrow:
   }
   return (
     <Link to={to} params={params} className={`${base} flex flex-col rounded-[18px]`}>
-      <div className="card-thumb"><CoverArt kind={cover} /></div>
+      <div className="card-thumb"><CoverArt kind={cover} alt={`${title} - cover art`} /></div>
       <div className="flex flex-col gap-[11px] p-6 pb-[26px]">
         <span className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--muted)]">{tag}</span>
         <h3 className="text-[19px] font-semibold leading-[1.25]">{title}</h3>
@@ -44,7 +44,7 @@ export function DocPage({ slug }: { slug: string }) {
   const idx = Math.max(0, DOCS.findIndex((d: any) => d.slug === slug))
   const d = DOCS[idx]
   const meta = seoMeta(d, 'doc')
-  useHead(meta.title, meta.description)
+  useHead(meta.title, meta.description, { type: 'article', section: 'Documentation', keywords: [d.title, 'KernelCMS docs'] })
   const groups: Record<string, any[]> = {}
   DOCS.forEach((x: any) => { (groups[x.group] = groups[x.group] || []).push(x) })
   const prev = DOCS[idx - 1], next = DOCS[idx + 1]
@@ -100,7 +100,7 @@ function IndexHead({ kicker, title, sub }: any) {
 const indexSection = `${wrap} pt-[clamp(40px,6vw,72px)] pb-[clamp(56px,9vw,110px)]`
 
 export function GuidesIndex() {
-  useHead(GUIDES_INDEX_SEO.title, GUIDES_INDEX_SEO.description)
+  useHead(GUIDES_INDEX_SEO.title, GUIDES_INDEX_SEO.description, { keywords: ['KernelCMS guides', 'headless CMS tutorial', 'add a backend'] })
   const [first, ...rest] = GUIDES
   return (
     <main><section><div className={indexSection}>
@@ -140,14 +140,14 @@ function Reader({ kicker, tag, title, lead, html, back }: any) {
 export function GuideReader({ slug }: { slug: string }) {
   const g = GUIDES.find((x: any) => x.slug === slug) || GUIDES[0]
   const meta = seoMeta(g, 'guide')
-  useHead(meta.title, meta.description)
+  useHead(meta.title, meta.description, { type: 'article', section: 'Guide', faq: g.faq, keywords: [g.title, g.tag] })
   return <Reader kicker={<Link to="/guides" className="hover:text-[var(--text)]">Guides</Link>} tag={g.tag} title={g.title} lead={g.excerpt} html={g.html}
     back={<Link className="px-[18px] py-4 border border-[var(--border)] rounded-xl flex-1 hover:border-[color-mix(in_srgb,var(--text)_24%,var(--border))]" to="/guides"><div className="text-xs text-[var(--muted)]">← All guides</div><div className="font-semibold mt-[3px]">Back to guides</div></Link>} />
 }
 
 // ---- Blog -------------------------------------------------------------------
 export function BlogIndex() {
-  useHead(BLOG_INDEX_SEO.title, BLOG_INDEX_SEO.description)
+  useHead(BLOG_INDEX_SEO.title, BLOG_INDEX_SEO.description, { keywords: ['headless CMS comparison', 'KernelCMS vs Payload', 'KernelCMS vs Sanity', 'best headless CMS'] })
   const [first, ...rest] = BLOG
   return (
     <main><section><div className={indexSection}>
@@ -163,7 +163,13 @@ export function BlogIndex() {
 export function ArticleReader({ slug }: { slug: string }) {
   const b = BLOG.find((x: any) => x.slug === slug) || BLOG[0]
   const meta = seoMeta(b, 'article')
-  useHead(meta.title, meta.description)
+  // Parse "Jun 11, 2026" as a UTC calendar date so datePublished doesn't drift a day.
+  let published: string | undefined
+  try { published = new Date(b.date + ' UTC').toISOString() } catch { published = undefined }
+  useHead(meta.title, meta.description, {
+    type: 'article', section: b.tag, author: b.author, published,
+    image: `/og/${b.slug}.png`, imageAlt: b.title, keywords: [b.title, b.tag, 'headless CMS comparison'],
+  })
   return (
     <main><div className={wrap}>
       <div className="max-w-[820px] mx-auto text-center pt-6 pb-2">
@@ -171,7 +177,7 @@ export function ArticleReader({ slug }: { slug: string }) {
         <h1 className="text-[clamp(2rem,1.3rem+3vw,3.4rem)] font-semibold my-4">{b.title}</h1>
         <div className="flex items-center justify-center gap-[10px] text-[var(--muted)] text-sm"><span>{b.author}</span><Dot /><span>{b.date}</span><Dot /><span>{b.read} read</span></div>
       </div>
-      <div className="article-hero max-w-[1000px] mx-auto my-10 aspect-[21/9] rounded-[24px] overflow-hidden relative border border-[var(--border)] bg-[#0c0d10]"><CoverArt kind={b.cover} label={false} /></div>
+      <div className="article-hero max-w-[1000px] mx-auto my-10 aspect-[21/9] rounded-[24px] overflow-hidden relative border border-[var(--border)] bg-[#0c0d10]"><CoverArt kind={b.cover} label={false} alt={`${b.title} - article cover image`} /></div>
       <Prose className="prose max-w-[840px] mx-auto mt-10" content={articleTop(b) + b.html + articleBottom(b)} />
       <div className={`${wrap} max-w-[840px] mt-12 text-center`}><Link className="inline-flex items-center gap-2 px-[18px] py-[11px] rounded-[10px] border border-[var(--border)] bg-transparent text-[var(--text)] text-sm font-semibold hover:border-[color-mix(in_srgb,var(--text)_26%,var(--border))] [&>svg]:w-4 [&>svg]:h-4" to="/blog"><Icon name="arrowLeft" /> All articles</Link></div>
     </div></main>

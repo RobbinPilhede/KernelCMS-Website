@@ -62,7 +62,7 @@ const TAG: Record<string, string> = {
 }
 
 function Changelog() {
-  useHead('Changelog - KernelCMS', 'Release notes for KernelCMS: every version, what was added, improved, and fixed.')
+  useHead('Changelog - KernelCMS', 'Release notes for KernelCMS: every version, what was added, improved, and fixed.', { keywords: ['KernelCMS changelog', 'release notes', 'headless CMS updates'] })
   const wrap = 'w-full max-w-[820px] mx-auto px-[clamp(18px,4vw,36px)]'
   return (
     <main><section className="pt-[clamp(48px,7vw,88px)] pb-[clamp(56px,9vw,110px)]"><div className={wrap}>
