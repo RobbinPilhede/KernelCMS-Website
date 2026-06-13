@@ -1030,6 +1030,85 @@ curl http://localhost:3000/api/posts/<id>/geo                 # text/markdown - 
 <p><code>geoDocument</code> renders one published document as markdown with a <strong>citation block</strong> - author, last-updated date, and the canonical URL from <code>baseUrl</code> + <code>urlPattern</code>. The corpus and each chunk carry the same provenance footer. This builds on KernelCMS's <a href="#/docs/semantic-search">content-credentials</a> work: when a document is signed, its citation additionally carries a <strong>signature-verified note</strong>; when signing isn't configured, the citation still carries author, date, and URL and simply omits that line. Rich text is rendered with <code>toMarkdown(richTextDoc)</code>, exported from <code>kernelcms/richtext</code>.</p>
 ${warn(`<strong>Published-only guarantee.</strong> Every generator runs through the access-checked pipeline as an <em>anonymous</em> principal filtering <code>_status === 'published'</code>, with no <code>overrideAccess</code>. Drafts, scheduled-but-unpublished docs, access-restricted documents, and read-denied fields <strong>never</strong> appear. Output is size-bounded by <code>maxDocsPerCollection</code> (default 1000) and <code>maxDocsTotal</code> (default 5000).`)}`
     },
+    {
+      slug: 'realtime', group: 'Data & APIs', nav: 'Real-time', title: 'Real-time change feed',
+      lead: 'Opt in and every content write lands on a durable, access-filtered feed - pull it for CDC, stream it over SSE for live UIs, or subscribe in-process. Metadata only, never a leaked body.',
+      html: `
+<p>KernelCMS can emit a change event for every content write onto one durable feed, served in two shapes: a <strong>pull feed</strong> you poll with a cursor (CDC), and a <strong>live push stream</strong> over Server-Sent Events (reactive UIs). The same events are also delivered <strong>in-process</strong> for server code, workflows, and live re-indexing. It runs through the same access-checked engine as every other read - the feed is a view into it, never a side channel around it. The whole feature is <strong>off by default</strong>.</p>
+
+<h2 id="enable">Enable it</h2>
+<p>Opt in on your config. <code>retain</code> bounds the change outbox - once full, the oldest rows drop (a clamped maximum applies, so the outbox is never unbounded):</p>
+${code('ts', `export default defineConfig({
+  realtime: {
+    enabled: true,   // default false - the whole feature is opt-in
+    retain: 50000,   // max change rows kept in the outbox (default 10000, clamped)
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="event">The event shape</h2>
+<p>Every change - over any surface - is the same metadata record. There is <strong>no document body</strong>, only that a document changed and how:</p>
+${code('ts', `type ChangeEvent = {
+  seq: number          // monotonic sequence (per node); also the SSE event id
+  at: string           // ISO timestamp
+  collection: string
+  documentId: string
+  event: 'create' | 'update' | 'delete' | 'publish' | 'unpublish'
+  principalType: 'user' | 'agent'  // who caused it
+}`)}
+<p>To act on the new content, re-fetch it through the normal access-checked API - the event tells you <em>that</em> something changed, not <em>what</em> it now says.</p>
+
+<h2 id="pull">The pull feed (cursor polling)</h2>
+<p><code>kernel.changes(...)</code> returns a batch plus the cursor to resume from. Persist the cursor and a restarted consumer picks up exactly where it left off:</p>
+${code('ts', `let cursor = 0 // or a value you persisted
+
+const { changes, cursor: next } = await kernel.changes({
+  since: cursor,         // exclusive: events with seq > since
+  collection: 'posts',   // optional: filter to one collection
+  limit: 100,            // optional: batch size
+  req,                   // the request principal - access is enforced
+})
+for (const e of changes) await handle(e)
+cursor = next            // poll again with since: cursor`)}
+<p>Over HTTP the same feed is a single authenticated GET - there is no anonymous change feed:</p>
+${code('bash', `curl "http://localhost:3000/api/changes?since=0&collection=posts&limit=100"`)}
+
+<h2 id="sse">The live SSE stream</h2>
+<p><code>GET /api/changes/stream</code> upgrades to <code>text/event-stream</code> and emits one frame per change as it happens, plus <code>: ping</code> heartbeats. Each frame carries <code>id: &lt;seq&gt;</code>, so the stream is resumable:</p>
+${code('text', `id: 41
+data: {"seq":41,"collection":"posts","documentId":"p_07","event":"create","principalType":"user"}
+
+: ping`)}
+<p>The browser <code>EventSource</code> API consumes it directly:</p>
+${code('ts', `const es = new EventSource('/api/changes/stream?collection=posts', {
+  withCredentials: true, // send the session cookie - the stream requires auth
+})
+es.onmessage = (msg) => {
+  const e = JSON.parse(msg.data) // a ChangeEvent (metadata only)
+  if (e.event !== 'delete') refetch(e.collection, e.documentId)
+}`)}
+<p><code>EventSource</code> reconnects automatically and sends the last id it saw as <code>Last-Event-ID</code>; the server replays the changes after that <code>seq</code> (within retention) before going live, so a brief drop loses nothing. A non-browser client sets the header itself:</p>
+${code('bash', `curl -N -H "Last-Event-ID: 41" "http://localhost:3000/api/changes/stream?collection=posts"`)}
+
+<h2 id="subscribe">In-process subscribe</h2>
+<p>For server code in the same process - a workflow step, a live re-indexer, a cache invalidator - subscribe directly. <code>kernel.subscribe(fn)</code> returns an <strong>unsubscribe function</strong>:</p>
+${code('ts', `const unsubscribe = kernel.subscribe((e) => {
+  if (e.collection === 'posts') reindex(e.documentId)
+})
+// when you're done (shutdown, teardown):
+unsubscribe()`)}
+
+<h2 id="security">The security property</h2>
+<p>Two guarantees make the feed safe to expose, both enforced by the engine: events are <strong>metadata only</strong> (never the body), and the feed is <strong>access-filtered per subscriber</strong> - before an event reaches a subscriber, their read access for that document is checked, and if they can't read it the event is <strong>dropped entirely</strong>. They're never even told it changed. The client re-fetches the real document through the normal access-checked read path, which strips fields they may not see.</p>
+${warn(`The filter <strong>fails closed</strong>. For a <code>delete</code> (the doc is gone) and for row-scoped reads where access depends on the row's data, the filter can't re-check the specific document, so it requires a <strong>fully-public read rule</strong> on the collection before delivering the event - anything narrower drops it. Both endpoints require auth; retention and connection counts are bounded; and a feed-write failure <strong>never</strong> breaks the content write.`)}
+
+<h2 id="notes">Honest notes</h2>
+<ul>
+<li><strong>Publish currently reads as <code>update</code>.</strong> The feed is driven by <code>afterChange</code>, whose args don't carry the prior <code>_status</code>. The <code>event</code> type includes <code>'publish'</code>/<code>'unpublish'</code>, but a publish today surfaces as <code>update</code> - treat it as "content moved" and re-fetch to read <code>_status</code>.</li>
+<li><strong><code>seq</code> is per-node.</strong> The sequence counter is local to one node - correct ordering for a single-node deployment. Multi-node needs a shared sequence; until then, run the feed from one node.</li>
+</ul>
+${tip(`Real-time pairs with the rest of the engine: <a href="#/docs/agentic-workflows">workflows</a> react to a change, <a href="#/docs/semantic-search">search</a> stays live by re-indexing on each event, and a CDC pipeline streams changes downstream without re-scanning everything.`)}`
+    },
 
     // ---- Build your own -----------------------------------------------------
     {
