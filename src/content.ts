@@ -864,6 +864,61 @@ ${code('bash', `curl "http://localhost:3000/api/posts/semantic?q=how%20do%20I%20
 curl "http://localhost:3000/api/posts/hybrid?q=how%20do%20I%20deploy"`)}
 ${warn(`Results <strong>always</strong> go through the access-checked read path: a vector hit for a document the caller can't read is dropped, never leaked. <code>limit</code> is clamped (max 100) and <code>filter</code> is validated to real columns (no injection / prototype pollution). An embed failure is logged - never with the text or key - and never breaks a content write.`)}`
     },
+    {
+      slug: 'ai-discoverability', group: 'Data & APIs', nav: 'AI discoverability', title: 'AI discoverability (llms.txt & GEO)',
+      lead: 'Make your content ingestible and citable by AI answer engines - llms.txt, a full corpus, RAG chunks, and per-document GEO markdown, all published-only.',
+      html: `
+<p>KernelCMS can publish your content for <strong>AI answer engines</strong> - ChatGPT, Claude, Perplexity, Google AI - to ingest and cite. This is <strong>GEO</strong> (Generative Engine Optimization): the SEO-for-LLMs discipline of making content easy for a model to read, retrieve, and attribute. The lever is one optional <code>discoverability</code> block, and the surface it produces follows the emerging <strong>llms.txt</strong> standard. Everything is generated from your live content through the <strong>same access-checked read path</strong> as every other read - so there's no separate file to hand-maintain and watch drift.</p>
+
+<h2 id="config">Configure discoverability</h2>
+<p>The feature is <strong>off until you add the block</strong>. Defaults are conservative: only collections with a public read and a title are exposed, and auth/upload/system collections are never exposed unless you set <code>include: true</code>.</p>
+${code('ts', `export default defineConfig({
+  discoverability: {
+    title: 'Acme Blog',
+    description: 'Guides and changelog from the Acme team.',
+    baseUrl: 'https://acme.com',          // builds absolute canonical URLs
+    collections: [
+      {
+        slug: 'posts',
+        titleField: 'title',
+        descriptionField: 'excerpt',        // per-link summary
+        bodyField: 'body',                  // rendered into the corpus / GEO markdown
+        urlPattern: '/blog/:slug',          // :token resolves against the document
+      },
+    ],
+    maxDocsPerCollection: 1000,             // default 1000
+    maxDocsTotal: 5000,                     // default 5000
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="ops">The four operations</h2>
+<p>All on the Local API, all reading as an anonymous principal:</p>
+${code('ts', `// (a) The llms.txt index - title, description, per-collection \`- [title](url): summary\`.
+const indexTxt = await kernel.llmsTxt()
+
+// (b) The full corpus - every exposed doc as a \`##\` markdown section + citation footer.
+const corpusTxt = await kernel.llmsFullTxt()
+
+// (c) Retrieval-ready chunks for RAG / GEO ingestion.
+const chunks = await kernel.contentChunks({ collection: 'posts', limit: 200 })
+//   -> { id, collection, title, url, text, tokensEstimate, updatedAt, provenance? }[]
+
+// (d) One published doc as GEO markdown with a citation block, or null.
+const md = await kernel.geoDocument({ collection: 'posts', id })`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Each op has a public route. These take <strong>no auth</strong> and <strong>only ever emit published, publicly readable content</strong>:</p>
+${code('bash', `curl http://localhost:3000/api/llms.txt                       # text/plain  - the index
+curl http://localhost:3000/api/llms-full.txt                  # text/plain  - the corpus
+curl "http://localhost:3000/api/content-chunks?collection=posts&limit=50"  # JSON chunks
+curl http://localhost:3000/api/posts/<id>/geo                 # text/markdown - one doc`)}
+<p>The convention is that the index lives at your site root, not under <code>/api</code>. Proxy <code>/llms.txt</code> to <code>/api/llms.txt</code> (e.g. a Next.js <code>rewrites()</code> entry, or a reverse-proxy location block) so answer engines find it where they expect.</p>
+
+<h2 id="geo">GEO citations &amp; provenance</h2>
+<p><code>geoDocument</code> renders one published document as markdown with a <strong>citation block</strong> - author, last-updated date, and the canonical URL from <code>baseUrl</code> + <code>urlPattern</code>. The corpus and each chunk carry the same provenance footer. This builds on KernelCMS's <a href="#/docs/semantic-search">content-credentials</a> work: when a document is signed, its citation additionally carries a <strong>signature-verified note</strong>; when signing isn't configured, the citation still carries author, date, and URL and simply omits that line. Rich text is rendered with <code>toMarkdown(richTextDoc)</code>, exported from <code>kernelcms/richtext</code>.</p>
+${warn(`<strong>Published-only guarantee.</strong> Every generator runs through the access-checked pipeline as an <em>anonymous</em> principal filtering <code>_status === 'published'</code>, with no <code>overrideAccess</code>. Drafts, scheduled-but-unpublished docs, access-restricted documents, and read-denied fields <strong>never</strong> appear. Output is size-bounded by <code>maxDocsPerCollection</code> (default 1000) and <code>maxDocsTotal</code> (default 5000).`)}`
+    },
 
     // ---- Build your own -----------------------------------------------------
     {
