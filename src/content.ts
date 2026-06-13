@@ -1587,6 +1587,95 @@ ${tip(`<ul>
 </ul>`)}`
     },
     {
+      slug: 'releases', group: 'Media & operations', nav: 'Content releases', title: 'Content releases',
+      lead: 'Bundle a set of draft documents and publish them together, atomically - optionally on a schedule - for coordinated launches and campaigns.',
+      html: `
+<p>A <strong>release</strong> is a named bundle of draft documents that go live <strong>together</strong>, in one step. Instead of publishing a launch one document at a time and hoping nothing slips, you gather the changes - a new landing page, three posts, an updated pricing global - into a release, preview the whole bundle as it will read, and ship it as a single unit with an all-or-nothing safety net. It is the practical heart of "content environments": coordinate a launch or a campaign, then publish it atomically.</p>
+${code('ts', `export default defineConfig({
+  releases: true, // opt-in; provisions _releases + _release_items
+  collections: [/* … drafts-enabled collections … */],
+})`)}
+${note(`Releases are <strong>off until you opt in</strong>. Setting <code>releases: true</code> provisions two system tables - <code>_releases</code> and <code>_release_items</code> - and unlocks the ops below. Members must be real, non-system, <a href="#/docs/versions-and-drafts">drafts-enabled</a> collection documents.`)}
+
+<h2 id="lifecycle">Create, add members, preview, publish</h2>
+<p>Open a release, add the draft documents that belong to it, preview the bundle, then publish (or schedule) it:</p>
+${code('ts', `// 1. open a release (status: 'open' - editable)
+const release = await kernel.createRelease({ name: 'Spring launch' })
+
+// 2. add draft members (access-checked - you can't add a doc you can't read)
+await kernel.addToRelease({ release: release.id, collection: 'posts', id: postId })
+await kernel.addToRelease({ release: release.id, collection: 'pages', id: pageId })
+// …and remove one again while still open
+await kernel.removeFromRelease({ release: release.id, collection: 'pages', id: pageId })
+
+// 3. preview the whole bundle in its current draft state
+const { docs } = await kernel.previewRelease({ release: release.id })
+
+// 4. publish every member together, atomically
+const result = await kernel.publishRelease({ release: release.id })
+// -> { status: 'published' | 'failed', published: [...], failed: [...] }`)}
+${note(`<code>previewRelease</code> returns the member documents in their <strong>current draft state</strong>, each loaded through the access-checked read path - a member the caller can't read is simply dropped from the preview, never leaked.`)}
+
+<h2 id="ops">The operations</h2>
+${code('ts', `kernel.createRelease({ name })                              // -> a new 'open' release
+kernel.addToRelease({ release, collection, id })            // add a draft member
+kernel.removeFromRelease({ release, collection, id })       // remove a member
+kernel.listReleases({ status })                             // status? filters open/scheduled/published/failed
+kernel.getRelease({ release })                              // the release + its items
+kernel.previewRelease({ release })                          // member docs, current draft state (access-checked)
+kernel.publishRelease({ release })                          // -> { status, published, failed }
+kernel.scheduleRelease({ release, at })                     // publish at an instant
+kernel.cancelRelease({ release })                           // cancel a scheduled release
+kernel.processScheduledReleases()                           // drain due releases (from cron)`)}
+
+<h2 id="state-machine">The state machine</h2>
+<p>A release moves through a small, explicit set of states. Only an <code>open</code> release is editable; once published it is immutable:</p>
+${code('text', `open  ──publishRelease──▶ published      (all members live, publishedAt set)
+  │
+  ├──scheduleRelease──▶ scheduled ──drain──▶ published
+  │
+  └──(a member fails mid-publish)──▶ failed`)}
+<ul>
+<li><strong>open</strong> - editable. Add and remove members freely.</li>
+<li><strong>published</strong> - every member is live, <code>publishedAt</code> is set, and the release is <strong>immutable</strong>.</li>
+<li><strong>scheduled</strong> - awaiting the cron drain; flips to <code>published</code> when due.</li>
+<li><strong>failed</strong> - a member errored partway through publishing (see the all-or-nothing note below).</li>
+</ul>
+
+<h2 id="all-or-nothing">All-or-nothing pre-flight</h2>
+<p><code>publishRelease</code> does not publish member-by-member and hope. It first <strong>dry-runs the publish gate for every member</strong> - the per-document publish access check, the agent draft-only brake, and the blocking eval / content-CI gate against each member's current draft content. If <em>any</em> member would fail, it publishes <strong>none</strong>: the call returns <code>{ status: 'failed', failed: [...] }</code> with the reasons, and the release stays <code>open</code> so you can fix and retry. Only when all members pass does it publish each one through the normal <code>publish</code> op.</p>
+${warn(`<strong>The guarantee.</strong> Publishing a release goes through the <strong>same per-document publish gate as a direct publish</strong>. A caller can only publish a release whose every member they could publish directly; an <a href="#/docs/mcp">AI agent</a> can never publish a release; and the eval gate still applies to each member. The pre-flight makes go-live all-or-nothing - it never half-launches. <em>(Honest note: the pre-flight is a full dry-run, so a fault that only surfaces mid-publish leaves the release <code>failed</code> rather than rolled back - best-effort atomic, not a transaction.)</em>`)}
+
+<h2 id="scheduling">Scheduling (the cron drain)</h2>
+<p>Instead of publishing now, schedule the whole bundle for a future instant. The release moves to <code>scheduled</code> and a cron drains it when due - call <code>processScheduledReleases()</code> alongside <code>processScheduledPublishes()</code>:</p>
+${code('ts', `await kernel.scheduleRelease({ release: release.id, at: '2026-07-01T09:00:00Z' })
+await kernel.cancelRelease({ release: release.id }) // back to 'open' before it fires`)}
+${code('bash', `# a cron that drains due scheduled releases (and per-doc publishes)
+* * * * * cd /app && node -e "const k=require('./run'); k.processScheduledPublishes(); k.processScheduledReleases()"`)}
+${note(`A scheduled release is <strong>gate-checked at schedule time</strong> - the same model as a scheduled per-document publish - and the drain <strong>re-checks the eval gate</strong> against the then-current draft content before it goes live.`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Every release route is admin/editor-gated:</p>
+${code('http', `GET    /api/_admin/releases                                   # list (status filter)
+POST   /api/_admin/releases                                   # create { name }
+GET    /api/_admin/releases/:id                               # the release + items
+DELETE /api/_admin/releases/:id                               # delete a release
+POST   /api/_admin/releases/:id/items                         # add { collection, id }
+DELETE /api/_admin/releases/:id/items/:collection/:docId      # remove a member
+GET    /api/_admin/releases/:id/preview                       # the bundle, current draft state
+POST   /api/_admin/releases/:id/publish                       # publish atomically
+POST   /api/_admin/releases/:id/schedule                      # schedule { at }`)}
+
+<h2 id="security">Same gate as a direct publish</h2>
+${tip(`<ul>
+<li><strong>Per-document publish gate.</strong> A member is published through the normal <code>publish</code> op, so the collection's <code>access.publish</code> rule applies to each one. You can only publish a release whose every member you could publish directly.</li>
+<li><strong>Agents can never publish a release.</strong> The agent draft-only brake holds at the bundle level too - an <a href="#/docs/mcp">AI agent</a> principal can curate a release but cannot make it live.</li>
+<li><strong>Member management is access-checked.</strong> You cannot pull a document you can't read into a release, and the preview drops members you can't read.</li>
+<li><strong>Eval gates still apply.</strong> The blocking content-CI eval runs in the pre-flight and again on the scheduled drain - a member that fails its evals blocks the whole release.</li>
+</ul>`)}
+<p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> and <a href="#/docs/time-machine">time-machine</a>.</p>`
+    },
+    {
       slug: 'caching-and-search', group: 'Media & operations', nav: 'Caching & search', title: 'Caching & search',
       lead: 'Read-through caching and access-checked full-text search, both adapter-based.',
       html: `
@@ -2517,6 +2606,7 @@ npx kernel migrate          # apply the additive plan`)}
     'admin-customization': { metaTitle: 'Customize the Admin | KernelCMS React Panel', metaDesc: 'Customize the KernelCMS admin: register custom field components, list cells, and dashboard widgets, plus conditional fields and editor tabs.' },
     'uploads-and-storage': { metaTitle: 'Uploads & Storage | KernelCMS Media', metaDesc: 'Upload collections, storage adapters (local disk, S3, R2), image variants, and focal points in KernelCMS, with sharp-powered image resizing.' },
     'versions-and-drafts': { metaTitle: 'Versions & Drafts | KernelCMS Publishing', metaDesc: 'Version history, a draft and publish lifecycle, scheduled publishing, and autosave in KernelCMS. Restore previous versions and control what readers see.' },
+    'releases': { metaTitle: 'Content Releases | KernelCMS Atomic Publishing', metaDesc: 'Bundle draft documents and publish them together atomically in KernelCMS - optionally scheduled - for coordinated launches. All-or-nothing pre-flight, same per-doc publish gate.' },
     'caching-and-search': { metaTitle: 'Caching & Search | KernelCMS Performance', metaDesc: 'Read-through caching (memory, database, Redis) and access-checked full-text search in KernelCMS. Opt collections in, serve reads fast, and invalidate on write.' },
     'webhooks': { metaTitle: 'Webhooks | KernelCMS Event Notifications', metaDesc: 'Fire signed HTTP POST webhooks on content change in KernelCMS. Configure URL, secret, collections, and events, and verify the HMAC-SHA256 signature.' },
     'migrations': { metaTitle: 'Migrations | KernelCMS Schema Changes', metaDesc: 'Diff-based, additive, deterministic schema migrations in KernelCMS. Preview every change with migrate:status, apply safely, and never lose data by surprise.' },
