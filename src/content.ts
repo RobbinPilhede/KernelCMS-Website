@@ -1157,6 +1157,50 @@ curl "http://localhost:3000/api/graph-search?q=who%20wrote%20about%20deploys&col
 ${tip(`Every node loads through the same access-checked read path. A node the caller can't read is dropped <strong>and the edge to it is omitted</strong>, so the relationship's existence never leaks; read-denied fields never appear in a <code>label</code> or <code>context</code>; and the bounds (<code>depth</code>, <code>maxNodes</code>, fan-out, de-dupe) make traversal DoS-safe. It is the retrieval half - the LLM generation stays yours.`)}`
     },
     {
+      slug: 'content-intelligence', group: 'Data & APIs', nav: 'Content intelligence', title: 'Content intelligence (related & dedupe)',
+      lead: 'The embeddings that power search also power "more like this" recommendations and automatic near-duplicate detection - access-checked, straight from the vectors you already index.',
+      html: `
+<p>Your embeddings power more than <a href="#/docs/semantic-search">search</a>. The same vectors KernelCMS writes on every write also drive two <strong>content-intelligence</strong> operations: <code>kernel.relatedContent(...)</code> returns the documents most semantically <em>like</em> a given one - "more like this" for internal-linking and recommendations - and <code>kernel.findDuplicates(...)</code> finds <strong>near-duplicate / redundant</strong> documents across a collection for content-quality and dedupe cleanups. Both run through the <strong>same access-checked read path</strong> as every other operation, so a related or duplicate result never surfaces - or even implies the existence of - a document the caller can't read. Once your content is embedded, recommendations and dedupe sweeps come for free, off the index you already maintain.</p>
+
+<h2 id="prereqs">Prerequisites: embeddings + a vector store</h2>
+<p>Content intelligence is built on the vector index, so it needs exactly the <a href="#/docs/semantic-search">semantic-search</a> setup: a pluggable <code>embeddings: { embed }</code> and a collection whose <code>search</code> sets <code>semantic: true</code>. With no embedder configured, these ops have nothing to compare and don't apply.</p>
+${code('ts', `{
+  slug: 'posts',
+  access: { read: () => true },
+  search: { fields: ['title', 'body'], semantic: true }, // embedded on every write
+  fields: [/* … */],
+}`)}
+
+<h2 id="related">Related content - more like this</h2>
+<p>Given one document, return the others most like it. KernelCMS <strong>re-embeds the seed from its current content</strong>, runs a vector nearest-neighbor search, drops the seed itself, and loads the rest through the access-checked read path:</p>
+${code('ts', `const { docs } = await kernel.relatedContent({
+  collection: 'posts',
+  id,                                  // the seed document
+  limit: 5,                            // how many neighbors to return (clamped)
+  filter: { _status: 'published' },    // optional; validated against real columns
+  req,                                 // the request principal - access is enforced
+})`)}
+<p>The seed is embedded from how it reads <em>now</em> (not a stored vector argument) and never returns itself. <code>limit</code> and <code>filter</code> behave exactly as in <code>semanticSearch</code>. This is the engine behind internal-linking and "you might also like" rails - and a related result the caller can't read is simply dropped from <code>docs</code>.</p>
+
+<h2 id="duplicates">Near-duplicate detection</h2>
+<p>Sweep a collection for pairs of documents whose embeddings are close enough to be near-duplicates or redundant content - the heart of a content-QA / dedupe pass:</p>
+${code('ts', `const { pairs } = await kernel.findDuplicates({
+  collection: 'posts',
+  threshold: 0.92,   // min cosine similarity for a pair; default 0.9, clamped to [0, 1]
+  limit: 50,         // max pairs returned (clamped)
+  req,
+})
+// pairs: Array<{ a, b, score }> - a and b are the two docs, score the cosine similarity`)}
+<p>Raise <code>threshold</code> (<code>0.95</code>+) for only the closest copies; lower it to catch looser redundancy. <code>score</code> lets you sort and triage. Similarity is computed over each document's <strong>last-indexed content</strong> within a <strong>bounded scan</strong> - it's an admin operation, not a hot path, so it caps both the docs scanned and the pairs returned rather than running an unbounded all-pairs comparison.</p>
+
+<h2 id="rest">The REST surface</h2>
+<p>Both ops over HTTP, access-checked to the request principal:</p>
+${code('bash', `curl "http://localhost:3000/api/posts/<id>/related?limit=5"
+curl "http://localhost:3000/api/_admin/duplicates?collection=posts&threshold=0.92&limit=50"  # admin/editor-gated`)}
+<p>The <code>related</code> route resolves the caller like every other read route; the <code>duplicates</code> route is <strong>admin/editor-gated</strong> - near-duplicate detection is an administrative content-quality operation - and <code>threshold</code> / <code>limit</code> are clamped at the boundary.</p>
+${tip(`Every result goes through the same access-checked read path: a related or duplicate result never surfaces (or implies the existence of) a document the caller can't read. A duplicate <strong>pair is returned only when the caller can read both documents</strong> - a pair touching a hidden doc is dropped whole, never revealing its id or existence. <code>threshold</code> is clamped to <code>[0, 1]</code>, <code>limit</code> is clamped, <code>filter</code> is validated to real columns (no injection), the dedup scan is bounded, and the embedding provider's key and text never leak. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'ai-discoverability', group: 'Data & APIs', nav: 'AI discoverability', title: 'AI discoverability (llms.txt & GEO)',
       lead: 'Make your content ingestible and citable by AI answer engines - llms.txt, a full corpus, RAG chunks, and per-document GEO markdown, all published-only.',
       html: `
