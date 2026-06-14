@@ -2512,6 +2512,78 @@ ${tip(`The drain is <strong>cron / operator-only</strong> - <code>processContent
 ${warn(`<code>_archived_at</code> is <strong>server-managed and client-immutable</strong> - a normal user can never set it (to fake an archive) or clear it (to un-archive) through the API; only the trusted drain writes it. The <code>expireField</code> itself is an <strong>ordinary editor field</strong>: setting an expiry is a normal write, so you can only expire content you can already write. The privilege lives entirely in the drain that <em>applies</em> the expiry, not in scheduling it.`)}`
     },
     {
+      slug: 'content-qa', group: 'Media & operations', nav: 'Content QA', title: 'Content QA & linting',
+      lead: 'Pre-publish evals - "content CI" - gate every publish, and lintDocument runs the same rules on demand so an editor sees the blockers and warnings before they publish.',
+      html: `
+<p>KernelCMS runs <strong>pre-publish evals</strong> - "content CI" - at the publish chokepoint: a blocking rule that returns an <code>error</code> finding <strong>rejects the publish</strong>. <strong>Content QA</strong> extends that with an <em>on-demand</em> lint - <code>kernel.lintDocument(...)</code> runs the <strong>same configured rules</strong> read-only, so an editor sees the blocking errors and quality warnings <strong>before</strong> they try to publish. The rules that gate a publish and the rules you lint against are <em>the same rules</em>: a green lint is a publishable document.</p>
+
+<h2 id="configure">Configure the rules</h2>
+<p>Content QA is off until you list rules. Drop the built-in factories into <code>config.evals</code>; each is small, pure, and composable:</p>
+${code('ts', `import { defineConfig, requiredFieldsEval, seoEval, a11yEval, readabilityEval, linkEval } from '@kernel/core'
+
+export default defineConfig({
+  evals: [
+    // BLOCKING - these reject a publish:
+    requiredFieldsEval({ fields: ['summary', 'hero', 'category'] }),
+    seoEval({ titleField: 'title', descriptionField: 'meta_description' }),
+    a11yEval(),
+
+    // NON-BLOCKING - quality warnings, never reject a publish:
+    readabilityEval({ fields: ['body'] }),
+    linkEval(),
+
+    // scope a rule to specific collections (default: every collection):
+    { ...a11yEval(), appliesTo: ['posts', 'pages'] },
+  ],
+  collections: [/* … */],
+})`)}
+<p>Two knobs control behaviour at the gate. <strong><code>blocking</code></strong> (default <code>true</code>) is whether an <code>error</code> finding <strong>rejects the publish</strong>; a <code>blocking: false</code> rule only ever warns. <strong><code>appliesTo: ['slug', …]</code></strong> scopes a rule to those collections - omit it to apply everywhere. <code>warn</code> / <code>info</code> findings <strong>never block</strong>, even from a blocking rule - only an <code>ok:false</code> <code>error</code> does.</p>
+
+<h2 id="built-in-checks">The built-in checks</h2>
+<p>Seven factories ship in <code>@kernel/core</code>. Each returns an <code>EvalRule</code> you drop into <code>config.evals</code>:</p>
+<table class="compare"><thead><tr><th>Check</th><th class="us">What it does</th><th>Blocking?</th></tr></thead><tbody>
+<tr><td><code>a11yEval()</code></td><td>Embedded images need <code>alt</code>; heading levels must not skip (no h2→h4).</td><td><strong>Yes</strong></td></tr>
+<tr><td><code>seoEval({ titleField, … })</code></td><td>Title present and within length bounds (default 10–60); optional meta description bounded (warn).</td><td><strong>Yes</strong></td></tr>
+<tr><td><code>policyEval({ bannedTerms })</code></td><td>Rejects content containing any banned term (case-insensitive).</td><td><strong>Yes</strong></td></tr>
+<tr><td><code>brandEval({ requiredDisclaimers })</code></td><td>Required disclaimer / legal phrases must appear in the content.</td><td><strong>Yes</strong></td></tr>
+<tr><td><code>readabilityEval({ fields, … })</code></td><td>Warns when prose runs long-winded (avg sentence length / share of long words).</td><td>No (warn)</td></tr>
+<tr><td><code>requiredFieldsEval({ fields })</code></td><td>A listed field must be non-empty to publish - "no publish without a summary / hero image / category".</td><td><strong>Yes</strong></td></tr>
+<tr><td><code>linkEval({ fields? })</code></td><td>Warns on rich-text links with an empty / <code>#</code> / malformed target.</td><td>No (warn)</td></tr>
+</tbody></table>
+<p>The schema-aware checks (<code>a11yEval</code>, <code>policyEval</code>, <code>brandEval</code>, <code>readabilityEval</code>, <code>linkEval</code>) read the collection's fields automatically, so they walk the right rich-text and upload fields without you naming them.</p>
+
+<h2 id="lint-on-demand">Lint on demand</h2>
+<p><code>kernel.lintDocument</code> runs every applicable rule against a document <strong>right now</strong>, read-only, and returns what the publish gate would see:</p>
+${code('ts', `const { ok, findings, blocking } = await kernel.lintDocument({
+  collection: 'posts',
+  id,
+  req, // the request principal - access is enforced
+})`)}
+<p>Linting is an <strong>editorial pre-publish tool</strong>, so it is gated on <strong>update access</strong>, not plain read: it inspects the live <strong>draft</strong> (so you can lint a work-in-progress) and its findings echo content (banned terms, link targets, field presence). The caller must be able to <strong>edit</strong> the document - exactly as if they were about to publish it - so a public reader who can't publish can never harvest unpublished drafts through the lint surface. A document that doesn't exist throws <code>NotFound</code>; one the caller can't edit is <code>Forbidden</code>. Over REST, <code>GET /api/:collection/:id/lint</code>:</p>
+${code('bash', `# runs the configured evals read-only; requires UPDATE access (an editor token)
+curl -H "Authorization: Bearer <editor-token>" "http://localhost:3000/api/posts/<id>/lint"`)}
+<p>The result is the complete picture - <code>findings</code> is every result, <code>blocking</code> the subset that would reject a publish, and <code>ok</code> is <code>true</code> exactly when <code>blocking</code> is empty:</p>
+${code('ts', `{
+  ok: boolean,            // true when NOTHING would block a publish
+  findings: [{
+    rule: string,         // the rule that produced it (e.g. 'a11y', 'required-fields')
+    ok: boolean,
+    severity: 'error' | 'warn' | 'info',
+    message: string,
+    field?: string,
+    blocking: boolean,    // whether this rule's \`error\` would reject a publish
+  }, /* … */],
+  blocking: [ /* the subset that WOULD reject a publish */ ],
+}`)}
+
+<h2 id="at-publish">At publish</h2>
+<p>The same rules gate the publish. At the publish chokepoint KernelCMS runs <code>config.evals</code> against the to-be-published content; if <strong>any</strong> blocking rule returns an <code>ok:false</code> <code>error</code>, the publish is <strong>rejected</strong> with those findings. Warnings and info are recorded in the audit meta but never block. The same gate also runs inside <a href="#/docs/releases">content releases</a> (every member is dry-run through it, and again on the scheduled drain) and the <a href="#/docs/agentic-workflows">agentic workflow</a> <code>evalGate</code> step - one set of rules, every publish path.</p>
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`<code>lintDocument</code> is <strong>read-only and gated on update access</strong>, and returns <strong>exactly what the publish gate would see</strong>. Because lint exposes the live draft and its findings echo content, it requires the same right as publishing - <strong>only an editor of the document can lint it</strong>, never a public reader - so drafts can't leak through the lint surface. It runs the <strong>same <code>config.evals</code></strong> as publish, so a green lint (<code>ok: true</code>) is a publishable document, for the configured rules.`)}
+${note(`Built-in rules are <strong>pure and deterministic</strong>: each reads only the fields it declares, never touches the network, and never mutates the document - so the lint and the gate give the same answer every time. A rule that <em>throws</em> fails closed (it becomes a blocking error, never a silent pass and never a 500). Red-teamed to <strong>Risk LOW</strong>. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> these rules gate and <a href="#/docs/releases">content releases</a>.`)}`
+    },
+    {
       slug: 'caching-and-search', group: 'Media & operations', nav: 'Caching & search', title: 'Caching & search',
       lead: 'Read-through caching and access-checked full-text search, both adapter-based.',
       html: `
