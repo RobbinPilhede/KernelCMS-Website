@@ -2584,6 +2584,62 @@ ${tip(`<code>lintDocument</code> is <strong>read-only and gated on update access
 ${note(`Built-in rules are <strong>pure and deterministic</strong>: each reads only the fields it declares, never touches the network, and never mutates the document - so the lint and the gate give the same answer every time. A rule that <em>throws</em> fails closed (it becomes a blocking error, never a silent pass and never a 500). Red-teamed to <strong>Risk LOW</strong>. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> these rules gate and <a href="#/docs/releases">content releases</a>.`)}`
     },
     {
+      slug: 'content-decisions', group: 'Media & operations', nav: 'Content decisions', title: 'Content decisions',
+      lead: 'Named delivery slots that pick the single best published document for the caller\'s audience and pin it per viewer - stateless, access-checked, deterministic.',
+      html: `
+<p>A <strong>content decision</strong> is a named delivery slot that, at request time, picks the single best <strong>published</strong> document for the caller's audience and pins that choice per viewer. <code>GET /api/_decide/hero_promo</code> returns <em>one</em> document - the one this caller should see right now - instead of a list the front-end has to filter. Decisions are <strong>stateless</strong>: no table, no impression store, no extra schema. A decision composes three things KernelCMS already does - the access-checked <strong>published read</strong>, <strong>audience resolution</strong>, and <strong>deterministic bucketing</strong> - so it can <strong>never</strong> surface a draft, a private document, or a field the caller can't read.</p>
+
+<h2 id="configure">Configure the decisions</h2>
+<p>Decisions are opt-in: list them under <code>config.decisions</code>. Audiences are only required if a decision uses <code>audienceField</code>.</p>
+${code('ts', `import { defineConfig } from '@kernel/core'
+
+export default defineConfig({
+  // Required only if a decision uses \`audienceField\`:
+  audiences: { segments: ['default', 'vip'], default: 'default' },
+
+  decisions: [
+    {
+      slug: 'hero_promo',          // unique, snake_case; GET /api/_decide/hero_promo
+      collection: 'promos',        // a real, non-system collection to pick from
+      where: { active: { equals: true } }, // optional candidate filter (config-authored, trusted)
+      sort: '-priority',           // optional candidate sort
+      audienceField: 'segment',    // optional doc field naming the targeted segment (needs audiences)
+      fallback: 'default',         // when an audience has no match: 'default' | 'any' (default) | 'none'
+    },
+  ],
+  collections: [/* … */],
+})`)}
+<p><code>where</code> is <strong>config-authored and trusted</strong> - it is not a request input. <code>sort</code> orders candidates and also bounds the pool (top 100). <code>audienceField</code> names the doc field a candidate targets and requires <code>audiences</code>. <code>fallback</code> decides what happens when the audience has no match: <code>'any'</code> (the default) falls back to the whole pool, <code>'default'</code> to candidates targeting the default segment, and <code>'none'</code> yields no result.</p>
+
+<h2 id="local-api-rest">Local API and REST</h2>
+<p><code>kernel.decide</code> returns one chosen document, or <code>null</code> when no candidate qualifies:</p>
+${code('ts', `const decision = await kernel.decide({ slug: 'hero_promo', viewerKey, req })
+// → DecisionResult | null`)}
+<p><code>viewerKey</code> is the sticky identity for this viewer - optional; when omitted the viewer defaults to the authenticated user id, or <code>'anonymous'</code> for an anonymous request. <code>req</code> is the request principal, and candidate access is enforced against it. The result is a <code>DecisionResult</code>:</p>
+${code('ts', `{
+  slug: string,            // the decision that produced this
+  collection: string,      // the collection it picked from
+  audience: string,        // the resolved segment (untrusted input collapses to default)
+  candidateIds: string[],  // the qualifying pool, in sort order
+  chosenId: string,        // the one document this viewer gets
+  reason: 'single' | 'audience-match' | 'audience-fallback' | 'rotation',
+  document: /* the chosen published document */,
+}`)}
+<p>Over REST, <code>GET /api/_decide/:slug?audience=&lt;segment&gt;&amp;viewer=&lt;viewerKey&gt;</code> returns <strong>200</strong> with the <code>DecisionResult</code>, or <strong>404</strong> when decisions are disabled, the slug is unknown, or no candidate qualifies (including when the target collection is not publicly readable). Both query parameters are optional.</p>
+${code('bash', `curl "http://localhost:3000/api/_decide/hero_promo?audience=vip&viewer=visitor-123"`)}
+${note(`Because the response is personalized per viewer, it is sent with <code>cache-control: private, no-store</code> - a decision is never shared-cached.`)}
+
+<h2 id="how-the-pick-works">How the pick works</h2>
+<p><strong>Load the pool.</strong> Candidates are read through the normal <strong>access-checked, published-only</strong> read path, with <code>where</code> and <code>sort</code> applied, bounded to the <strong>top 100</strong> by sort. <strong>Narrow by audience.</strong> When the decision has an <code>audienceField</code>, the resolved segment selects the candidates that target it (<code>reason: 'audience-match'</code>). The requested <code>?audience=</code> is <strong>untrusted</strong>: an unknown value - or a prototype-pollution attempt like <code>__proto__</code> - collapses to the default segment. <strong>Fall back</strong> per <code>fallback</code> when the audience narrows the pool to nothing (<code>'any'</code> → whole pool with <code>reason: 'audience-fallback'</code>, <code>'default'</code> → default-segment candidates, <code>'none'</code> → no result). <strong>Pick one, stickily</strong> - a single-candidate pool is <code>reason: 'single'</code>, otherwise the per-viewer pick is <code>reason: 'rotation'</code>.</p>
+
+<h2 id="sticky-deterministic">Sticky &amp; deterministic</h2>
+<p>The same <code>viewer</code> always gets the <strong>same document</strong> for a given decision. The pick is an <strong>FNV-1a hash</strong> of <code>slug:viewerKey</code>, taken modulo the pool size - a pure function of the viewer and the decision, so it needs no stored state and is stable across requests and processes. Only the <strong>hash</strong> of the viewer key is used to index the pool; the raw key is <strong>never stored</strong> and never logged - there is <strong>no PII</strong>.</p>
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`<strong>Published-only and access-checked.</strong> Candidates load through the normal access-checked, published-only read - a decision can <strong>never</strong> surface a draft, a private document, or a field the caller can't read, and a non-public collection yields no decision (<strong>404</strong>). <strong>Sticky and deterministic</strong>: the same viewer always gets the same document (FNV-1a hash of <code>slug:viewerKey</code>, modulo the pool), and only the <strong>hash</strong> is used - the raw key is never stored, so there is no PII.`)}
+${warn(`<code>?audience=</code> is <strong>untrusted</strong> - an unknown or prototype-pollution value collapses to the default segment, never a thrown error or a leaked path. The response is personalized, so it is sent <code>cache-control: private, no-store</code> and never shared-cached. With analytics <code>autoCapture</code> on, each decision records a single <code>variant_impression</code> (collection + document + slug + segment) with <strong>no PII</strong>. The candidate pool is bounded to the top 100 by sort, so a decision is constant work regardless of collection size.`)}`
+    },
+    {
       slug: 'caching-and-search', group: 'Media & operations', nav: 'Caching & search', title: 'Caching & search',
       lead: 'Read-through caching and access-checked full-text search, both adapter-based.',
       html: `
