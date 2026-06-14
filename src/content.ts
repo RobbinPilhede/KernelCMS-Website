@@ -351,6 +351,51 @@ ${tip(`Creating from a template is a <strong>normal create</strong>, not a side 
 ${warn(`The caller's <code>data</code> override is <strong>prototype-pollution-guarded</strong> (<code>__proto__</code> / <code>constructor</code> / <code>prototype</code> rejected), and the template's config is <strong>frozen</strong> so one instantiation can't change the next. Red-teamed to Risk LOW.`)}`
     },
     {
+      slug: 'content-comments', group: 'Content modeling', nav: 'Editorial comments', title: 'Editorial comments',
+      lead: 'Threaded review annotations on a document - anchored to a field or left document-level - gated by the target document’s read access, with the author recorded from the authenticated principal.',
+      html: `
+<p><strong>Editorial comments</strong> are threaded review notes that live <em>beside</em> the content - "tighten this intro", "ready to publish?" - instead of in a separate chat or spreadsheet. A comment anchors to a specific field or to the document, replies thread under it, and a reviewer resolves it when the feedback is addressed. They’re gated by the <strong>target document’s read access</strong>: you only ever see or add comments on a document you can already read.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Comments are off until you enable them. Set <code>comments: true</code> on the config - this registers a private <code>_comments</code> system table that is <strong>not</strong> reachable through generic CRUD:</p>
+${code('ts', `export default defineConfig({ comments: true, collections: [/* … */] })`)}
+
+<h2 id="add">Add &amp; reply</h2>
+<p><code>kernel.addComment</code> adds a comment (or a threaded reply via <code>parentId</code>, validated to the same document) to a document you can read. <code>body</code> is trimmed and length-bounded; <code>field</code> must name a real field. The author comes from the principal - a forged <code>authorId</code> in the call is ignored:</p>
+${code('ts', `const comment = await kernel.addComment({
+  collection: 'articles',
+  id: article.id,
+  body: 'tighten the intro',
+  field: 'summary',   // optional anchor (omit for a document-level comment)
+  req,                // the principal authors the comment
+})
+// comment.authorId === req.user.id, comment.resolved === false`)}
+
+<h2 id="list">List &amp; count</h2>
+<p><code>listComments</code> returns a document’s comments oldest → newest (resolved hidden unless <code>includeResolved</code>); <code>commentCount</code> powers an "N comments" badge:</p>
+${code('ts', `const open = await kernel.listComments({ collection: 'articles', id: article.id, req })
+const badge = await kernel.commentCount({ collection: 'articles', id: article.id, req })`)}
+
+<h2 id="resolve">Resolve &amp; delete</h2>
+<p>Resolve is allowed for the comment’s <strong>author</strong> or a <strong>reviewer</strong> (<code>admin</code>/<code>editor</code>); delete is stricter - the <strong>author</strong> or an <strong>admin</strong> only:</p>
+${code('ts', `await kernel.resolveComment({ commentId: comment.id, req })                 // resolve
+await kernel.resolveComment({ commentId: comment.id, resolved: false, req }) // reopen
+await kernel.deleteComment({ commentId: comment.id, req })                   // delete`)}
+
+<h2 id="rest">REST</h2>
+${code('bash', `# add a comment as the authenticated user (anonymous → 401):
+curl -X POST "http://localhost:3000/api/articles/$ID/comments" \\
+  -H "Authorization: Bearer $TOKEN" -d '{"body":"ready to publish?","field":"summary"}'
+
+# resolve it:
+curl -X PATCH "http://localhost:3000/api/_admin/comments/$COMMENT_ID" \\
+  -H "Authorization: Bearer $TOKEN" -d '{"resolved":true}'`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`Every op (add / list / count / resolve / delete) checks the target document’s <code>access.read</code> rule <strong>and</strong> its row-scope before returning a comment, a count, or mutating - so the comment surface can never leak a document you can’t read, or even hint it exists. This holds for the anonymous Local-API path too: a null-user caller is held to the read rule, with no "no user = trusted" shortcut. Every REST route requires auth up front.`)}
+${warn(`The author is recorded from the authenticated principal, never the client body. Resolve/delete re-gate on the <em>live</em> document before the author/role check; threading stays within one document; ids are prototype-pollution-guarded; <code>_comments</code> is unreachable via generic CRUD; create/resolve/delete are audited. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'relationships', group: 'Content modeling', nav: 'Relationships & joins', title: 'Relationships & joins',
       lead: 'Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.',
       html: `
