@@ -710,6 +710,62 @@ ${note(`Granting an agent the <code>admin</code> role is rejected at startup - i
 ${warn(`<strong>Privilege-escalation guard.</strong> On an auth collection, authority fields (<code>roles</code>, <code>role</code>, <code>permissions</code>, <code>is_admin</code>, <code>is_staff</code>, <code>is_superuser</code>) are admin-write by default - even a user who can update their own record cannot promote themselves. An explicit field-level <code>access.update</code> rule overrides the default; trusted paths using <code>overrideAccess</code> still set them.`)}`
     },
     {
+      slug: 'field-encryption', group: 'Access & auth', nav: 'Field encryption', title: 'Field-level encryption',
+      lead: 'Mark a field encrypted: true and KernelCMS transparently encrypts it at rest with AES-256-GCM - plaintext lives only in the app layer.',
+      html: `
+<p>Mark any storage field <code>encrypted: true</code> and KernelCMS encrypts it <strong>transparently</strong> - encrypted on write, decrypted on read - so the plaintext lives only inside the app layer, while the storage column holds an opaque, authenticated <code>enc:1:&lt;iv&gt;:&lt;tag&gt;:&lt;ciphertext&gt;</code> envelope. It is for the fields you don't want sitting in cleartext in a backup, a replica, or a leaked dump: a Social Security number, an API token, a private note, an access key.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Encryption is off until you give the engine a key and mark a field. Set <code>encryption.key</code> on the config - read it from the environment, <strong>never</strong> hardcode it - and add <code>encrypted: true</code> to any storage field:</p>
+${code('ts', `export default defineConfig({
+  encryption: { key: process.env.FIELD_ENCRYPTION_KEY }, // server-only secret, ≥16 chars
+  collections: [
+    {
+      slug: 'people',
+      fields: [
+        { name: 'name', type: 'text' },
+        { name: 'ssn', type: 'text', encrypted: true },   // stored encrypted
+        { name: 'notes', type: 'json', encrypted: true }, // any storage field type works
+      ],
+    },
+  ],
+})`)}
+<p>The <code>key</code> is <strong>any sufficiently-random secret of at least 16 characters</strong>; a 256-bit AES key is derived from it with SHA-256, so you don't have to supply exactly 32 bytes. Marking a field <code>encrypted: true</code> without configuring <code>encryption.key</code> is <strong>rejected at config load</strong> - there is no quiet fallback to storing plaintext. It works for <strong>any storage field type</strong> (<code>text</code>, <code>json</code>, <code>richText</code>, …): the plaintext is JSON-serialized before it is encrypted, so structured values round-trip exactly.</p>
+
+<h2 id="give-up">What you give up</h2>
+<p>An encrypted column holds <strong>opaque, non-deterministic ciphertext</strong> - the storage layer can't see the value, and the same plaintext encrypts differently every time. That makes a handful of features impossible by construction, and each is <strong>rejected at config load</strong> rather than failing silently later. An <code>encrypted</code> field <strong>cannot</strong> be:</p>
+<ul>
+<li><strong><code>unique</code></strong> - uniqueness is a property of the stored bytes, and a fresh IV per value means two identical secrets store as different ciphertext; the database could never see the collision.</li>
+<li><strong><code>index</code>ed</strong> - encrypted bytes have no meaningful order, so an index buys nothing.</li>
+<li><strong>filtered or sorted on</strong> - a <code>where</code> or <code>sort</code> runs against the stored column, where the engine only ever sees ciphertext.</li>
+<li><strong>full-text searched</strong> - search indexes the stored text; ciphertext is noise.</li>
+<li><strong><code>localized</code> or <code>personalized</code></strong> - per-locale / per-audience variants and the encryption envelope can't share one column.</li>
+</ul>
+<p>That is the deliberate trade-off: you protect the value from anyone with the database, at the cost of the database being able to do anything <em>with</em> it. Keep the columns you query, sort, or index in plaintext, and reserve <code>encrypted: true</code> for the fields that are pure payload - secrets you store and hand back, never query by. <strong>Field read-access still applies on top:</strong> a caller who fails a field's <code>access.read</code> rule gets <code>null</code>, never the ciphertext.</p>
+
+<h2 id="key-management">Key management</h2>
+<p>The key is the whole security boundary - treat it exactly like a database credential. Read it from the environment, never commit or log it; it is server-only and never appears in a response or an error message.</p>
+${warn(`<strong>Rotation is a migration, and key-loss is final.</strong> The key that encrypted a value is the only key that can decrypt it. Rotating <code>encryption.key</code> makes every pre-existing envelope stop decrypting (reads raise <code>DecryptionError</code>), and there is <strong>no built-in re-encryption</strong> - to rotate, migrate by reading each document under the old key and re-writing it under the new one, with both available during the cutover. And <strong>lose the key and the data is unrecoverable</strong> - this is real encryption: no recovery path, no backdoor, no reset. Back the key up the way you back up a root credential.`)}
+
+<h2 id="how-it-works">How it works</h2>
+<p>On write, KernelCMS JSON-serializes the plaintext, generates a <strong>random 96-bit IV</strong>, and encrypts with <strong>AES-256-GCM</strong> under the key derived from <code>encryption.key</code>. What lands in the column is a self-describing envelope:</p>
+${code('text', `enc:1:<iv>:<tag>:<ciphertext>`)}
+<p><code>enc:1</code> is the scheme/version tag, <code>&lt;iv&gt;</code> the per-value nonce, <code>&lt;tag&gt;</code> the GCM authentication tag, and <code>&lt;ciphertext&gt;</code> the encrypted payload - all base64. On read the engine parses the envelope, <strong>verifies the authentication tag</strong>, decrypts, and JSON-parses the result back into the original value. Because the IV is regenerated for every write, encrypting the same plaintext twice yields two different envelopes - there is no equality or frequency to leak across rows. For advanced use, <code>createFieldCipher(key)</code> and <code>DecryptionError</code> are exported from <code>@kernel/core</code>.</p>
+${tip(`<strong>Authenticated, and the key never leaves the server.</strong> AES-256-GCM verifies an authentication tag on every read, so a tampered envelope or the wrong key is a hard, detectable <code>DecryptionError</code> - never silently-decrypted garbage. The 256-bit AES key is SHA-256-derived from <code>encryption.key</code>, which is read from the environment and <strong>never</strong> logged, returned, or placed in an error message.`)}
+
+<h2 id="guarantees">The guarantees</h2>
+<p>Field-level encryption protects a value at rest with authenticated encryption and a server-only key - and is honest about exactly what that costs.</p>
+<ul>
+<li><strong>Authenticated, never silent garbage.</strong> A tampered envelope or the wrong key is a hard, detectable <code>DecryptionError</code>.</li>
+<li><strong>Per-value random IV.</strong> Identical plaintext stores as different ciphertext every time - no equality or frequency leak across rows.</li>
+<li><strong>The key stays on the server.</strong> SHA-256-derived from <code>encryption.key</code>; never logged, returned, or in an error message.</li>
+<li><strong>Read-access is still enforced.</strong> Encryption is not authorization: a read-denied reader gets <code>null</code>, never the ciphertext.</li>
+<li><strong>Incompatible features rejected at load.</strong> No <code>unique</code>, <code>index</code>, filter/sort, full-text search, <code>localized</code>, or <code>personalized</code> on an encrypted field.</li>
+<li><strong>Rotation is a migration; key-loss is final.</strong> Rotating makes old ciphertext unreadable (no built-in re-encryption); losing the key makes the data unrecoverable.</li>
+</ul>
+<p>Red-teamed to <strong>Risk LOW</strong>. See the <a href="#/docs/fields">field reference</a> and the <a href="#/docs/access-control">access model</a>.</p>`
+    },
+    {
       slug: 'multi-tenancy', group: 'Access & auth', nav: 'Multi-tenancy', title: 'Multi-tenancy',
       lead: 'Run many clients, sites, or workspaces on one KernelCMS instance with airtight per-tenant data isolation - and no per-collection access boilerplate.',
       html: `
