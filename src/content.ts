@@ -2183,30 +2183,82 @@ ${code('ts', `const { docs } = await kernel.searchDocs({ collection: 'posts', qu
 ${warn(`Search hits are loaded through the <strong>access-checked read path</strong>, so search never surfaces a document the caller cannot read - results are filtered, not just ranked.`)}`
     },
     {
-      slug: 'webhooks', group: 'Media & operations', nav: 'Webhooks', title: 'Webhooks',
-      lead: 'Fire signed HTTP POSTs when documents change.',
+      slug: 'webhooks', group: 'Media & operations', nav: 'Webhooks', title: 'Outbound webhooks',
+      lead: 'Push a signed HTTP POST to an external URL when documents change - inline best-effort or durable at-least-once with retry + backoff - behind a default-deny SSRF egress guard, with an admin delivery log and secrets that never leave the server.',
       html: `
-<h2 id="configure">Configure webhooks</h2>
+<p><strong>Outbound webhooks</strong> push a signed <code>POST</code> to an external URL whenever a document changes, so a downstream system, a static-site rebuild, or a Slack relay can react without polling. Each delivery carries a small JSON payload and an HMAC signature the receiver verifies. A webhook <code>url</code> is <strong>default-deny on egress</strong> - it must be <code>http(s)</code> and may not target a loopback, private, link-local, or cloud-metadata host - and the signing <strong>secret</strong> and custom <strong>headers</strong> never leave the server. Durable delivery is <strong>at-least-once</strong> with bounded retries, so a receiver just verifies and dedupes.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Register one or more webhooks on the config. Each has a <code>url</code> and optional signing, filtering, and delivery options. Pick <strong>inline</strong> (best-effort, fires immediately) or <strong>durable</strong> (enqueued and retried) per endpoint:</p>
 ${code('ts', `export default defineConfig({
   webhooks: [
+    // Inline (default): best-effort, fires immediately on the write.
     {
-      url: 'https://hooks.example.com/kernel',
-      secret: process.env.WEBHOOK_SECRET, // HMAC-SHA256 signing key
+      slug: 'search-reindex',
+      url: 'https://hooks.example.com/reindex',
+      secret: process.env.REINDEX_SECRET, // HMAC-SHA256 signing key
       collections: ['posts'],             // default: all non-system collections
-      events: ['create', 'update'],       // default: create, update, delete
-      headers: { 'x-source': 'kernel' },
+      events: ['create', 'update', 'delete'],
+      headers: { 'x-source': 'kernel' },  // never returned by the admin surface
       timeoutMs: 5000,
     },
+    // Durable: enqueued to the outbox and drained by the cron with retry + backoff.
+    {
+      slug: 'billing-sync',
+      url: 'https://billing.internal.example.com/kernel',
+      secret: process.env.BILLING_SECRET,
+      collections: ['orders'],
+      events: ['create', 'update'],
+      durable: true,        // survives a down receiver — retried, never dropped
+      maxAttempts: 5,       // default 5; exponential backoff, capped at 1h
+    },
   ],
+  collections: [/* … */],
 })`)}
+<p>Omit <code>collections</code> and the webhook fires for every non-system collection; omit <code>events</code> and it fires on <code>create</code>, <code>update</code>, and <code>delete</code>. A durable webhook registers a private <code>_webhook_deliveries</code> outbox table that is <strong>not</strong> reachable through generic CRUD.</p>
 
-<h2 id="verify">Verifying the signature</h2>
-<p>When <code>secret</code> is set, each delivery carries <code>x-kernel-signature: sha256=&lt;hex&gt;</code>. Recompute it over the raw body on your receiver:</p>
-${code('ts', `import { createHmac } from 'node:crypto'
+<h2 id="inline-vs-durable">Inline vs. durable delivery</h2>
+<p>One config, two delivery modes - pick per endpoint with <code>durable</code>:</p>
+<ul>
+<li><strong>Inline (the default).</strong> A write fires a best-effort signed <code>POST</code> immediately. The document is committed first, so a slow or down receiver <strong>never fails the write</strong> - but if the receiver is down the event is <strong>dropped</strong>. Use it for non-critical fan-out.</li>
+<li><strong>Durable (<code>durable: true</code>).</strong> The write enqueues the event to the outbox and returns. The cron drain delivers it with retry + exponential backoff (capped at 1h) up to <code>maxAttempts</code> (default 5), so a briefly-down receiver no longer drops events.</li>
+</ul>
+${note(`Durable delivery is <strong>at-least-once</strong>: a slow ACK or a retried partial success can deliver the same event twice. The payload is <code>{ event, collection, id, doc?, timestamp }</code> (<code>doc</code> omitted on delete) - receivers should <strong>dedupe</strong> on <code>id</code> + <code>event</code> + <code>timestamp</code>.`)}
 
-const expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex')
-if (header !== expected) return res.status(401).end()`)}
-${warn(`Read the secret from the environment - never hardcode it. Restrict to the specific collections and events you need to keep the delivery surface tight.`)}`
+<h2 id="verify">Verify the signature</h2>
+<p>When a <code>secret</code> is set, each delivery carries <code>x-kernel-signature: sha256=&lt;hmac-of-body&gt;</code> (plus <code>x-kernel-event</code> and <code>x-kernel-timestamp</code>). Recompute the HMAC over the <strong>raw body bytes</strong> and compare in constant time:</p>
+${code('js', `import { createHmac, timingSafeEqual } from 'node:crypto'
+
+function verify(rawBody, header, secret) {
+  const expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex')
+  const a = Buffer.from(header ?? ''), b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+// reject with 401 if it doesn't match; dedupe on id+event+timestamp before acting.`)}
+
+<h2 id="drain">The cron drain</h2>
+<p>Durable deliveries sit in the outbox until a drain runs. <code>kernel.processWebhooks()</code> claims due deliveries, sends them, and reschedules failures with backoff. It is wired into the shared jobs runner:</p>
+${code('bash', `kernel jobs:run        # drains background jobs + due webhook deliveries
+kernel webhooks:run    # drain only webhook deliveries (standalone)`)}
+<p>A delivery moves <code>pending → delivered</code> on success, or <code>pending → failed</code> while attempts remain, and lands on <code>exhausted</code> once it has used <code>maxAttempts</code> without a <code>2xx</code>. Every attempt is audited (<code>webhook.deliver</code> / <code>webhook.fail</code>) when auditing is on.</p>
+
+<h2 id="admin">Admin surface</h2>
+<p>Webhook management is <strong>admin-only</strong>, and the summaries are <strong>redacted</strong> - the admin surface never returns the signing <code>secret</code> or your custom <code>headers</code>:</p>
+${code('http', `GET  /api/_admin/webhooks                                                  # registered webhooks (redacted)
+GET  /api/_admin/webhooks/deliveries?webhook=&status=&since=&limit=&page=  # the durable delivery log
+POST /api/_admin/webhooks/deliveries/:id/retry                             # requeue a failed/exhausted delivery`)}
+<p>The same operations are on the Local API: <code>kernel.processWebhooks({ now?, limit? })</code>, <code>kernel.listWebhooks()</code> (redacted), <code>kernel.webhookDeliveries({ webhook?, status?, since?, limit?, page? })</code>, and <code>kernel.retryWebhookDelivery({ deliveryId })</code>. Statuses are <code>pending</code>, <code>delivered</code>, <code>failed</code>, <code>exhausted</code>.</p>
+${code('bash', `# the delivery log for one webhook, exhausted only:
+curl "http://localhost:3000/api/_admin/webhooks/deliveries?webhook=billing-sync&status=exhausted" \\
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# requeue an exhausted delivery for the next drain:
+curl -X POST "http://localhost:3000/api/_admin/webhooks/deliveries/$DELIVERY_ID/retry" \\
+  -H "Authorization: Bearer $ADMIN_TOKEN"`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${warn(`<strong>SSRF: default-deny egress.</strong> A <code>url</code> must be <code>http(s)</code> and its host may <strong>not</strong> be loopback/private/link-local/cloud-metadata - <code>127.x</code>, <code>10.x</code>, <code>172.16–31.x</code>, <code>192.168.x</code>, <code>169.254.x</code> (incl. the metadata endpoint), <code>localhost</code>, <code>*.local</code>, <code>::1</code>, <code>fc/fd/fe8…</code>. Such a <code>url</code> is <strong>rejected at config load</strong>, before anything fires. The only way to target an internal host is <code>allowPrivateNetwork: true</code> on that one webhook - an explicit, per-endpoint opt-in for a trusted receiver or local dev.`)}
+${tip(`The signing <code>secret</code> and custom <code>headers</code> are <strong>never returned</strong> by the admin surface (<code>listWebhooks</code> / <code>GET /api/_admin/webhooks</code> are redacted) and <strong>never logged</strong>. Durable delivery is <strong>at-least-once</strong> with bounded retries (backoff capped at 1h, then <code>exhausted</code>) - dedupe on <code>id</code> + <code>event</code> + <code>timestamp</code>. Inline delivery is best-effort on top of a committed write and never breaks it. The <code>_webhook_deliveries</code> outbox is unreachable via generic CRUD, management is admin-only, and attempts are audited. Red-teamed to Risk LOW.`)}`
     },
     {
       slug: 'migrations', group: 'Media & operations', nav: 'Migrations', title: 'Migrations',
