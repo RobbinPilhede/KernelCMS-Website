@@ -1240,6 +1240,64 @@ ${warn(`The filter <strong>fails closed</strong>. For a <code>delete</code> (the
 ${tip(`Real-time pairs with the rest of the engine: <a href="#/docs/agentic-workflows">workflows</a> react to a change, <a href="#/docs/semantic-search">search</a> stays live by re-indexing on each event, and a CDC pipeline streams changes downstream without re-scanning everything.`)}`
     },
     {
+      slug: 'edge-delivery', group: 'Data & APIs', nav: 'Edge delivery', title: 'Edge delivery & CDN caching',
+      lead: 'Cache public reads aggressively at the CDN with cache tags, then invalidate exactly the changed content on every write - provider-agnostically. The "real-time at the edge" the market wants, done safely.',
+      html: `
+<p>KernelCMS turns your public reads into <strong>edge-cacheable</strong> responses and tells a CDN <em>exactly</em> what to invalidate on every write. Two halves: a cacheable read carries your <code>Cache-Control</code> plus a <code>Surrogate-Key</code> header listing the response's <strong>cache tags</strong>; a change-driven <strong>purge feed</strong> maps recent writes back to those same tags, so a worker purges only what actually changed. KernelCMS emits the tags and the purge list - <strong>the CDN integration is yours</strong> (Cloudflare, Fastly, Vercel). It is <strong>off by default</strong>, and the purge feed requires <a href="#/docs/realtime">real-time</a>.</p>
+
+<h2 id="enable">Enable it</h2>
+${code('ts', `export default defineConfig({
+  realtime: { enabled: true }, // the purge feed reads the change feed
+  edge: {
+    enabled: true,             // default false - the whole feature is opt-in
+    // the Cache-Control sent on a cacheable content read:
+    cacheControl: 'public, s-maxage=31536000, stale-while-revalidate=60',
+    tagHeader: 'Surrogate-Key',  // surrogate-key header name (default 'Surrogate-Key')
+    includeRelationships: true,  // also tag a doc with its relationship targets (default true)
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="headers">The cache headers - cacheable vs. private</h2>
+<p>With <code>edge.enabled</code>, <code>GET /api/:collection/:id</code> and <code>GET /api/:collection</code> branch on whether the response is cacheable at a shared edge. It is cacheable <strong>only when all</strong> hold: the caller is <strong>anonymous</strong>, the read is <strong>not access-scoped</strong> (a fully-public read rule, not a row filter), every returned doc is <strong>published</strong>, it is <strong>not a time-travel</strong> read (<code>asOf</code>), and it does <strong>not</strong> use <code>overrideAccess</code>. A cacheable response gets your <code>Cache-Control</code> plus the surrogate key:</p>
+${code('http', `Cache-Control: public, s-maxage=31536000, stale-while-revalidate=60
+Surrogate-Key: posts posts:p_07 users:u_1 media:m_3`)}
+<p>Anything else - authenticated, access-scoped, draft, <code>asOf</code>, or <code>overrideAccess</code> - instead gets <code>Cache-Control: private, no-store</code> and <strong>no</strong> surrogate key.</p>
+
+<h2 id="tags">Cache tags</h2>
+<p>A response's tags are <code>&lt;collection&gt;</code>, each <code>&lt;collection&gt;:&lt;id&gt;</code>, and - with <code>includeRelationships</code> - the <code>&lt;collection&gt;:&lt;id&gt;</code> of each doc a returned doc references, so the embedding doc carries the tag of what it embeds. <code>kernel.cacheTags(...)</code> computes them, sanitized to CDN-safe tokens:</p>
+${code('ts', `// tags for one document (own + collection + relationship-target tags):
+const tags = kernel.cacheTags({ collection: 'posts', id: 'p_07', doc })
+// or for a whole list response:
+const listTags = kernel.cacheTags({ collection: 'posts', docs })`)}
+
+<h2 id="purge">The purge feed (change-driven invalidation)</h2>
+<p><code>kernel.purgeFeed(...)</code> reads the change feed and maps recent writes to the tags to invalidate - <strong>including the tags of docs that reference a changed doc</strong> (bounded), so editing a referenced record purges every doc that embeds it. A worker polls it and purges the keys:</p>
+${code('ts', `let cursor = 0 // or a value you persisted
+const { tags, cursor: next } = await kernel.purgeFeed({ since: cursor })
+await purgeAtYourCDN(tags) // your provider's purge-by-key call
+cursor = next             // persist; poll again with since: cursor`)}
+<p>Over HTTP it is one <strong>admin-gated</strong> GET (it reveals changed ids), so it is never public:</p>
+${code('bash', `curl "http://localhost:3000/api/_edge/purge?since=0" \\
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# -> { "tags": ["posts", "posts:p_07", "users:u_1"], "cursor": 41 }`)}
+<p>For a push model, <code>kernel.onPurge(fn)</code> delivers tags over the realtime bus as changes happen. Both paths require <code>realtime</code>.</p>
+
+<h2 id="wiring">Wiring it to a CDN</h2>
+<p>KernelCMS produces the header on reads and the tags to purge; you connect them. For Fastly, set the surrogate key on the purge call; for Cloudflare Enterprise, set <code>tagHeader: 'Cache-Tag'</code> and purge by tag:</p>
+${code('ts', `// a worker draining the purge feed into a provider
+const { tags, cursor } = await kernel.purgeFeed({ since })
+await fetch(\`https://api.fastly.com/service/\${SERVICE}/purge\`, {
+  method: 'POST',
+  headers: { 'Fastly-Key': FASTLY_TOKEN, 'surrogate-key': tags.join(' ') },
+})`)}
+<p>Run it on a short interval, persist the returned <code>cursor</code>, and the CDN caches public reads for as long as your <code>s-maxage</code> allows while dropping exactly the changed content within seconds of a write.</p>
+
+<h2 id="guarantees">The guarantees</h2>
+<p>Cache tags only ever contain ids from the <strong>access-checked returned documents</strong> (a doc the caller can't read is never in the response, so its id is never in a tag); tag and header values are sanitized to CDN-safe tokens (no header injection); and the purge feed is admin-gated and reference-fan-out bounded. The CDN integration is yours. Red-teamed to Risk LOW.</p>
+${warn(`<strong>Private content is never edge-cached.</strong> A private, authenticated, access-scoped, draft, time-travel (<code>asOf</code>), or <code>overrideAccess</code> response is <strong>never</strong> given a public/<code>s-maxage</code> <code>Cache-Control</code> or a surrogate key - it gets <code>private, no-store</code>. A wrong header would cache private content at a shared edge, so this is the make-or-break invariant; no configuration relaxes it.`)}`
+    },
+    {
       slug: 'analytics', group: 'Data & APIs', nav: 'Analytics', title: 'Content analytics & insights',
       lead: 'Record a content event for every view, search, conversion - and every AI retrieval - then roll them up into aggregate insights. Privacy-first, opt-in, no PII.',
       html: `
