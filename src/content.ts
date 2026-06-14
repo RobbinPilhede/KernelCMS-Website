@@ -1239,6 +1239,73 @@ ${warn(`The filter <strong>fails closed</strong>. For a <code>delete</code> (the
 </ul>
 ${tip(`Real-time pairs with the rest of the engine: <a href="#/docs/agentic-workflows">workflows</a> react to a change, <a href="#/docs/semantic-search">search</a> stays live by re-indexing on each event, and a CDC pipeline streams changes downstream without re-scanning everything.`)}`
     },
+    {
+      slug: 'analytics', group: 'Data & APIs', nav: 'Analytics', title: 'Content analytics & insights',
+      lead: 'Record a content event for every view, search, conversion - and every AI retrieval - then roll them up into aggregate insights. Privacy-first, opt-in, no PII.',
+      html: `
+<p>KernelCMS can record a content event for every meaningful interaction and roll those events up into aggregate insights. You see how your content performs and, uniquely, <strong>how AI answer engines retrieve it</strong> - from the same model that already serves your content. There is <strong>no third-party analytics, no PII</strong>, and the whole feature is <strong>off by default</strong>.</p>
+
+<h2 id="enable">Enable it</h2>
+<p>Opt in on your config. <code>retain</code> bounds the event table; <code>autoCapture</code> turns on the zero-touch AI-retrieval and experiment signals (off by default):</p>
+${code('ts', `export default defineConfig({
+  analytics: {
+    enabled: true,        // default false - the whole feature is opt-in
+    retain: 100000,       // max event rows kept (default ~100k, clamped)
+    autoCapture: false,   // default false - see "Auto-capture" below
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="track">Capturing an event</h2>
+<p><code>kernel.track(...)</code> records one content event. Every field but <code>type</code> is optional - attach only the dimensions that fit. Tracking is <strong>resilient</strong>: a failure is logged and swallowed, never thrown into your handler, so analytics can't take down a content request.</p>
+${code('ts', `await kernel.track({
+  type: 'view',             // required - the event type (below)
+  collection: 'posts',      // optional - which collection
+  documentId: 'p_07',       // optional - which document
+  query: 'how do I deploy', // optional - the search/retrieval terms
+  experiment: 'cta',        // optional - experiment slug
+  variant: 'b',             // optional - assigned variant
+  value: 1,                 // optional - numeric value (e.g. a conversion)
+  meta: { source: 'blog' }, // optional - extra scalar, non-PII dimensions
+})`)}
+<p><code>type</code> is one of <code>'view'</code>, <code>'search'</code>, <code>'ai_retrieval'</code> (a doc returned by semantic/hybrid/graph search to ground an AI answer), <code>'citation'</code>, <code>'variant_impression'</code>, <code>'conversion'</code>, or <code>'custom'</code>. Over HTTP it is one POST - auth required unless the server sets <code>publicTrack</code>:</p>
+${code('bash', `curl -X POST http://localhost:3000/api/_analytics/track \\
+  -d '{"type":"view","collection":"posts","documentId":"p_07"}'`)}
+
+<h2 id="auto-capture">Auto-capture - the AI-retrieval signal</h2>
+<p>Set <code>autoCapture: true</code> and KernelCMS records the two events you'd otherwise wire by hand, <strong>fire-and-forget with zero added latency</strong> and a complete no-op when off:</p>
+<ul>
+<li><strong>AI retrieval.</strong> <code>semanticSearch</code> / <code>hybridSearch</code> / <code>graphSearch</code> emit one <code>ai_retrieval</code> event per returned <em>access-checked</em> document, with the search terms as <code>query</code>. A document the caller couldn't read is never returned, so it's never tracked. This is the "how AI uses your content" signal.</li>
+<li><strong>Variant impressions.</strong> <code>assignVariant</code> emits a <code>variant_impression</code> for the experiment and bucketed variant.</li>
+</ul>
+
+<h2 id="insights">Insights - aggregate queries</h2>
+<p><code>kernel.insights(...)</code> rolls the event table up into one of five metrics. Insights are <strong>aggregates only</strong> - counts and rates, never a replay of individual events:</p>
+${code('ts', `const result = await kernel.insights({
+  metric: 'ai_retrieval_leaderboard', // which roll-up (below)
+  collection: 'posts',  // optional - scope to one collection
+  type: 'view',         // optional - scope to one event type
+  from: '2026-06-01',   // optional - ISO lower bound
+  to: '2026-06-14',     // optional - ISO upper bound
+  limit: 20,            // optional - result size (clamped)
+})`)}
+<ul>
+<li><strong><code>top_content</code></strong> - documents ranked by event count.</li>
+<li><strong><code>top_queries</code></strong> - the most frequent search / AI-retrieval terms.</li>
+<li><strong><code>variant_performance</code></strong> - impressions, conversions, and conversion rate per experiment/variant.</li>
+<li><strong><code>activity</code></strong> - event counts over time and per type.</li>
+<li><strong><code>ai_retrieval_leaderboard</code></strong> - the content AI retrieves most to answer questions. The signal page-view analytics can't give you.</li>
+</ul>
+<p>The insights route is <strong>admin/editor-gated</strong> - there is no public insights endpoint:</p>
+${code('bash', `curl "http://localhost:3000/api/_admin/insights?metric=top_content&from=2026-06-01&limit=20"`)}
+
+<h2 id="privacy">Privacy, access & safety</h2>
+${tip(`<strong>No PII, ever.</strong> There is <strong>no user, IP, visitor, email, or token column</strong> on the event row - the schema has nowhere to put a person, and the authenticated principal who called <code>track</code> is <strong>never recorded</strong>. <code>track</code> strips PII-ish and prototype-pollution keys from <code>meta</code>, keeping only scalar, non-PII dimensions. You measure content, not people.`)}
+${warn(`<code>track</code> can only ever write the <code>_analytics</code> table - <code>collection</code> is <strong>inert data</strong> describing the event, not a write target. <code>insights</code> returns <strong>aggregates only</strong> (no raw-row replay), is <strong>filtered to collections the caller can read</strong> (a hidden collection's counts never leak), and is admin/editor-gated on top. Retention, the insights scan, and the result <code>limit</code> are all bounded. Red-teamed to Risk LOW (zero findings).`)}
+
+<h2 id="fits">Where it fits</h2>
+<p>Auto-capture turns every <a href="#/docs/semantic-search">semantic, hybrid</a>, or <a href="#/docs/knowledge-graph">graph</a> retrieval into an <code>ai_retrieval</code> signal, so the leaderboard shows what your RAG actually uses; <a href="#/docs/personalization">A/B</a> impressions are captured by <code>assignVariant</code> and a tracked <code>conversion</code> gives you the lift; and a <code>citation</code> event closes the loop with <a href="#/docs/ai-discoverability">llms.txt/GEO</a>. Analytics is a view into the same access-checked engine - never a side channel around it, and never a PII store.`
+    },
 
     // ---- Build your own -----------------------------------------------------
     {
