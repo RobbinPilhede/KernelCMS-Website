@@ -509,6 +509,55 @@ ${note(`Granting an agent the <code>admin</code> role is rejected at startup - i
 ${warn(`<strong>Privilege-escalation guard.</strong> On an auth collection, authority fields (<code>roles</code>, <code>role</code>, <code>permissions</code>, <code>is_admin</code>, <code>is_staff</code>, <code>is_superuser</code>) are admin-write by default - even a user who can update their own record cannot promote themselves. An explicit field-level <code>access.update</code> rule overrides the default; trusted paths using <code>overrideAccess</code> still set them.`)}`
     },
     {
+      slug: 'multi-tenancy', group: 'Access & auth', nav: 'Multi-tenancy', title: 'Multi-tenancy',
+      lead: 'Run many clients, sites, or workspaces on one KernelCMS instance with airtight per-tenant data isolation - and no per-collection access boilerplate.',
+      html: `
+<p>Opt into <code>tenancy</code> and one KernelCMS instance hosts many tenants - customers, sites, workspaces - each fully isolated, all in one database. For every scoped collection KernelCMS auto-adds a server-managed <code>tenant</code> field and AND-combines a tenant scope into its access rules, so every read and write is silently filtered to the caller's tenant. Zero per-collection boilerplate. This is the SaaS-on-KernelCMS and agency enabler.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Tenancy is off until you enable it. Everything below is a default:</p>
+${code('ts', `export default defineConfig({
+  tenancy: {
+    field: 'tenant',           // server-managed scope field (default 'tenant')
+    // collections: ['posts'], // scoped collections (default: all non-system, non-auth)
+    requireTenant: true,       // tenant-less principal → denied scoped content (fail-closed)
+    resolve: (req) => req.user?.tenant ?? null, // how the acting tenant is derived (the DEFAULT)
+  },
+  collections: [/* … */],
+})`)}
+
+<h2 id="resolve">How the tenant is resolved</h2>
+<p>The acting tenant comes from the <strong>authenticated principal</strong> - by default <code>req.user.tenant</code>. Put a <code>tenant</code> value on each user record and it flows into <code>req.user.tenant</code> on auth. A custom <code>resolve</code> (e.g. a verified subdomain → tenant mapping) is allowed, but it must derive from trusted, authenticated state.</p>
+${warn(`<strong>The whole security model.</strong> The acting tenant is resolved from the authenticated principal - <strong>NEVER</strong> a client query param, body field, or header. A tenant A principal can never read, list, count, update, or delete tenant B's content (cross-tenant access → nothing / <code>NotFound</code>); a client can never create or move a document into another tenant (<code>tenant</code> is auto-stamped on create, immutable on update); a tenant-less principal sees nothing (fail-closed). Cross-tenant content is never leaked through relationship populate - it resolves to a bare id. Only <code>overrideAccess</code> / a trusted system caller (migrations, admin tooling) bypasses it. Red-teamed across 35 cross-tenant attacks to Risk LOW, zero leaks.`)}
+
+<h2 id="auto">Auto-field, auto-scope, auto-stamp</h2>
+<p>For each scoped collection KernelCMS does three things for you: it <strong>auto-adds</strong> the server-managed <code>tenant</code> field; it <strong>auto-injects</strong> a tenant scope into read/create/update/delete access, <strong>AND-combined</strong> with your own rules (it narrows them, never widens); and it <strong>auto-stamps</strong> the tenant on create from the caller, treating it as immutable on update. Because the scope rides the existing access pipeline, every <code>find</code> / <code>findByID</code> / <code>update</code> / <code>delete</code> / <code>count</code> is filtered the same way, with no second code path.</p>
+
+<h2 id="example">Two tenants on one instance</h2>
+${code('ts', `tenancy: {}, // defaults are fine
+collections: [
+  { slug: 'users', auth: true,
+    // the tenant claim lives on the user; it flows into req.user.tenant on auth
+    fields: [{ name: 'tenant', type: 'text', required: true }] },
+  { slug: 'posts', // scoped automatically - no tenant field/rule needed
+    access: { read: ({ req }) => Boolean(req.user) },
+    fields: [{ name: 'title', type: 'text', required: true }] },
+]`)}
+${code('ts', `// the tenant is auto-stamped from the caller - no need to pass it
+await kernel.create({ collection: 'posts', data: { title: 'Acme launch' }, req: acmeReq })   // tenant 'acme'
+await kernel.create({ collection: 'posts', data: { title: 'Globex memo'  }, req: globexReq }) // tenant 'globex'
+
+await kernel.find({ collection: 'posts', req: acmeReq })   // → only the Acme post
+await kernel.find({ collection: 'posts', req: globexReq }) // → only the Globex post
+
+// cross-tenant access by id resolves to nothing:
+await kernel.findByID({ collection: 'posts', id: acmePostId, req: globexReq }) // → null
+
+// a client cannot move a doc into another tenant - 'tenant' is stripped on update:
+await kernel.update({ collection: 'posts', id: acmePostId, data: { tenant: 'globex' }, req: acmeReq }) // still 'acme'`)}
+${note(`Trusted server code - migrations, admin tooling, cross-tenant maintenance - steps outside the per-tenant view with <code>overrideAccess: true</code> (over HTTP, the API-key bearer token). It is the <strong>only</strong> bypass - never reachable from a client request.`)}`
+    },
+    {
       slug: 'authentication', group: 'Access & auth', nav: 'Authentication', title: 'Authentication',
       lead: 'Auth collections, sessions, API keys, password reset, email verification, 2FA, and OAuth.',
       html: `
