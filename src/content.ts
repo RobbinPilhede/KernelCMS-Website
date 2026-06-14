@@ -396,6 +396,63 @@ ${tip(`Every op (add / list / count / resolve / delete) checks the target docume
 ${warn(`The author is recorded from the authenticated principal, never the client body. Resolve/delete re-gate on the <em>live</em> document before the author/role check; threading stays within one document; ids are prototype-pollution-guarded; <code>_comments</code> is unreachable via generic CRUD; create/resolve/delete are audited. Red-teamed to Risk LOW.`)}`
     },
     {
+      slug: 'saved-views', group: 'Content modeling', nav: 'Saved views', title: 'Saved views',
+      lead: 'Named query presets for one collection - a stored where + sort + columns, saved per-user and re-applied in one click - where applying runs the normal access-checked find, so a view can only ever narrow within the caller’s access.',
+      html: `
+<p>A <strong>saved view</strong> (a <em>smart collection</em>) is a named query preset for one collection - a stored <code>where</code> + <code>sort</code> + display <code>columns</code> that an editor saves once and re-applies in a single click: "Published this month", "My drafts", "Out of stock". A view is <strong>owned</strong> by its creator and <strong>private</strong> unless <code>shared</code>. It’s <em>just a stored query</em>: applying it runs the <strong>normal, access-checked <code>find</code></strong>, so a view can only ever <strong>narrow</strong> results within the caller’s own access - never widen or bypass it.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Saved views are off until you enable them. Set <code>views: true</code> on the config - this registers a private <code>_views</code> system table that is <strong>not</strong> reachable through generic CRUD:</p>
+${code('ts', `export default defineConfig({ views: true, collections: [/* … */] })`)}
+
+<h2 id="save">Save &amp; apply</h2>
+<p><code>kernel.saveView</code> stores a named preset for a collection you can read. The <code>name</code> is trimmed and length-bounded; <code>where</code>/<code>sort</code>/<code>columns</code> are validated against the collection. The owner comes from the principal - a forged <code>ownerId</code> in the call is ignored:</p>
+${code('ts', `const view = await kernel.saveView({
+  collection: 'products',
+  name: 'Out of stock',
+  where: { stock: { equals: 0 } },
+  sort: '-updatedAt',
+  columns: ['title', 'stock', 'updatedAt'],
+  shared: false,   // private to the owner (the default)
+  req,             // the principal owns the view
+})
+// view.ownerId === req.user.id, view.shared === false`)}
+<p><code>kernel.applyView</code> runs the stored query through the <strong>normal <code>find</code> pipeline</strong>. A per-call <code>where</code> is AND-ed on (it can only narrow further); a per-call <code>sort</code> overrides the stored one. It returns a <code>PaginatedResult</code>:</p>
+${code('ts', `const page = await kernel.applyView({
+  viewId: view.id,
+  where: { price: { greater_than: 100 } }, // narrows the stored where (AND)
+  sort: '-price',
+  limit: 20, page: 1,
+  req,
+})
+// page.docs, page.totalDocs, page.page, page.totalPages …`)}
+
+<h2 id="list">List</h2>
+<p><code>listViews</code> returns the views the caller can see - their <strong>own</strong> plus <strong>shared</strong> views on collections they can read - optionally scoped to one collection. <code>getView</code> reads a single one:</p>
+${code('ts', `const mine = await kernel.listViews({ collection: 'products', req })
+const one = await kernel.getView({ viewId: view.id, req })`)}
+
+<h2 id="update">Update &amp; delete</h2>
+<p>Editing or removing a view is <strong>owner-or-admin only</strong> - an editor can’t touch someone else’s view. Any <code>where</code>/<code>sort</code> on an update is re-validated against the collection:</p>
+${code('ts', `await kernel.updateView({ viewId: view.id, name: 'Sold out', shared: true, req }) // edit + share
+await kernel.deleteView({ viewId: view.id, req })                                 // delete -> { id }`)}
+
+<h2 id="rest">REST</h2>
+${code('bash', `# save a view as the authenticated user (owner comes from the token, not the body):
+curl -X POST "http://localhost:3000/api/_admin/views" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -d '{"collection":"products","name":"Out of stock","where":{"stock":{"equals":0}},"sort":"-updatedAt"}'
+
+# apply it, narrowing further for this call:
+curl -X POST "http://localhost:3000/api/_admin/views/$VIEW_ID/apply" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -d '{"where":{"price":{"greater_than":100}},"limit":20,"page":1}'`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`Applying a view is a <strong>normal, access-checked <code>find</code></strong>: the collection’s <code>access.read</code> rule and row-scope run every time, and the stored <code>where</code>/<code>sort</code> are validated against the collection on save <strong>and</strong> apply. A per-call <code>where</code> is AND-ed on, so a view can only ever <strong>narrow</strong> results within the caller’s access - never widen, bypass, or escalate it. Applying a shared view never returns a row you couldn’t already read.`)}
+${warn(`The owner is recorded from the authenticated principal, never the client body (a forged <code>ownerId</code> is ignored). A view is private unless <code>shared</code>, and a shared view is visible only to principals who can read its collection. Update/delete are <strong>owner-or-admin only</strong>; <code>_views</code> is unreachable via generic CRUD; ids/fields are prototype-pollution-guarded; create/update/delete are audited (<code>view.create</code> / <code>view.update</code> / <code>view.delete</code>). Every REST route requires auth up front. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'relationships', group: 'Content modeling', nav: 'Relationships & joins', title: 'Relationships & joins',
       lead: 'Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.',
       html: `
