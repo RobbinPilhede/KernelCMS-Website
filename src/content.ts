@@ -1906,6 +1906,44 @@ export default defineConfig({
 })`)}`
     },
     {
+      slug: 'signed-asset-urls', group: 'Media & operations', nav: 'Signed asset URLs', title: 'Signed asset URLs',
+      lead: 'HMAC-signed, expiring capability links for one private upload file - mint with read access, fetch with no session until it expires, and the secret never leaves the server.',
+      html: `
+<p>By default KernelCMS serves an upload's <code>url</code> with a <strong>per-request access check</strong> against the caller's session - private media stays private. A <strong>signed asset URL</strong> is the other model: a <strong>bearer capability</strong> to <strong>one</strong> file that anyone holding it can fetch <strong>without a session</strong>, until it expires. Use it to email a private download, embed a time-limited image, or hand a file to a service that can't authenticate. Minting is <strong>access-checked</strong> - you can never sign a link to a file you can't read - and the HMAC is keyed by <code>config.secret</code> (server-only) over <strong>both</strong> the storage key <strong>and</strong> the expiry, so the secret never appears in the URL.</p>
+
+<h2 id="mint">Mint a signed URL</h2>
+<p>On the Local API, <code>signedAssetUrl</code> returns a plain string - <code>&lt;servePath&gt;/&lt;key&gt;?exp=&lt;unix&gt;&amp;sig=&lt;hmac&gt;</code> - good until <code>exp</code>. The caller must be able to <strong>read</strong> the document:</p>
+${code('ts', `const url = await kernel.signedAssetUrl({
+  collection: 'media',
+  id: file.id,
+  ttl: 600,   // seconds; optional, default 3600 (1h), clamped to 1s..7days
+  req,        // the caller — must be able to READ this document
+})
+// → "/files/2026/06/invoice.pdf?exp=1750000000&sig=9f86d0818..."`)}
+<p>The same is exposed over REST, <strong>access-checked as the caller</strong> - a caller who can't read the document never receives a link:</p>
+${code('http', `GET /api/:collection/:id/signed-url?ttl=600    # → { "url": "<servePath>/<key>?exp=&sig=" }`)}
+${code('bash', `# mint a 10-minute link as the authenticated caller
+curl "http://localhost:3000/api/media/$FILE_ID/signed-url?ttl=600" \\
+  -H "Authorization: Bearer $TOKEN"
+# → {"url":"/files/2026/06/invoice.pdf?exp=1750000000&sig=9f86d0818..."}`)}
+
+<h2 id="fetch">How a receiver fetches it</h2>
+<p>There's nothing to verify and no session to carry - the receiver just <strong>GETs the URL</strong>:</p>
+${code('bash', `curl "http://localhost:3000/files/2026/06/invoice.pdf?exp=1750000000&sig=9f86d0818..."`)}
+<p>The file route recomputes the HMAC over the key + <code>exp</code>, compares it <strong>constant-time</strong>, and checks that <code>exp</code> is still in the future. If both hold, it serves the bytes with no session check. A tampered key, a bumped <code>exp</code>, a truncated <code>sig</code>, or an expired link is rejected with <strong><code>403</code></strong>. A request with <strong>no</strong> <code>?sig=</code> falls back to the <strong>normal session access check</strong> - so signed URLs never loosen the default private-media path.</p>
+
+<h2 id="ttl">Choosing a TTL</h2>
+<p>A signed link is a <strong>capability</strong>: within its TTL, anyone who holds it can fetch the file. That's what lets you email a download or embed an image that can't authenticate - but it means the TTL <em>is</em> your security boundary. Pick the shortest window that still works: <strong>minutes</strong> for an emailed download, only as long as needed for a time-limited embed, and <strong>short</strong> (re-minted on demand) for a sensitive file.</p>
+${warn(`There is <strong>no per-link revocation</strong> - a link is valid until its <code>exp</code>, full stop. The only way to invalidate <strong>every</strong> outstanding link at once is to <strong>rotate <code>config.secret</code></strong>, which breaks all signatures keyed by the old secret. Lean on a <strong>short TTL</strong> instead of expecting to call a link back.`)}
+
+<h2 id="adapters">S3 and other adapters</h2>
+<p>When the storage adapter mints its <strong>own</strong> signed URLs - an S3/R2 presign, for example - <code>signedAssetUrl</code> <strong>delegates to the adapter</strong> instead of building a KernelCMS-signed path. You get the adapter's native presigned URL (served by the object store) behind the same access-checked minting, with the adapter's own expiry. For local disk storage, the <code>?exp=&sig=</code> capability above is what the KernelCMS file route serves.</p>
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`<strong>Can't be forged or extended.</strong> The <code>sig</code> is an HMAC keyed by <code>config.secret</code> (server-only) over the storage key <strong>and</strong> <code>exp</code>, compared <strong>constant-time</strong> - without the secret you can't sign any key or expiry, and bumping <code>exp</code> or swapping the file invalidates the signature (<code>403</code>). <strong>It expires</strong> (<code>ttl</code> clamped to <code>1s..7days</code>). <strong>Minting requires read access</strong>, so you can never link a file you can't see, and the REST route never hands an unauthorized caller a URL. The secret <strong>never appears in the URL</strong> or logs, and adapter presign (S3/R2) is honored behind the same access check.`)}
+${warn(`A signed link is a <strong>capability by design</strong> - <strong>shareable</strong> within its TTL and <strong>not individually revocable</strong>. Set a short TTL for sensitive files, and rotate <code>config.secret</code> to invalidate all outstanding links at once. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'versions-and-drafts', group: 'Media & operations', nav: 'Versions & drafts', title: 'Versions & drafts',
       lead: 'Version history, a draft/publish lifecycle, scheduled publishing, and autosave.',
       html: `
