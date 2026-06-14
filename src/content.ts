@@ -2375,6 +2375,85 @@ ${tip(`<ul>
 <p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a>, the <a href="#/docs/time-machine">time-machine</a>, and <a href="#/docs/releases">content releases</a>.</p>`
     },
     {
+      slug: 'content-federation', group: 'Media & operations', nav: 'Content federation', title: 'Content federation',
+      lead: 'Export a collection as a portable, deterministic bundle and sync it into another environment by id - create-or-update with a dry-run diff - to promote content from staging to production or keep two instances in sync.',
+      html: `
+<p><strong>Federation</strong> moves content <strong>between environments</strong>. You export a collection's documents as a portable, deterministic <strong>bundle</strong>, carry it to another instance, and <strong>sync</strong> it in by id - create-or-update, with a dry-run diff first. Instead of re-keying a staging launch into production by hand and praying the ids line up, you export exactly what you can read, look at precisely what would change, and apply it through the normal access-checked pipeline. The use case: promote content from staging to production, or keep two instances in sync.</p>
+${warn(`<strong>Scope - be honest.</strong> This is a <strong>deterministic upsert-by-id sync with a diff</strong>, not real-time replication. A sync applies the field data you exported into the target - create-or-update keyed on the id, <strong>last-write-wins per field</strong> on an update. There is no live stream, no conflict resolution, and no delete propagation: it syncs the documents in the bundle and leaves everything else alone.</p>`)}
+
+<h2 id="opt-in">Opt in</h2>
+<p>Federation is off until you opt in. Setting <code>federation: true</code> unlocks the export/sync ops and the admin REST routes below:</p>
+${code('ts', `export default defineConfig({
+  federation: true, // unlocks exportContent / syncContent + the admin routes
+  collections: [/* … */],
+})`)}
+
+<h2 id="export">Export a bundle</h2>
+<p><code>exportContent</code> reads a collection's documents and returns a <strong>portable, deterministic bundle</strong>. The export is <strong>access-checked</strong> - only documents the caller can <strong>read</strong> are included - and <strong>sorted by id</strong>, so the same inputs always produce byte-identical output:</p>
+${code('ts', `const bundle = await kernel.exportContent({
+  collection: 'posts',
+  where: { status: { equals: 'live' } }, // optional query filter
+  ids: ['post_a', 'post_b'],             // …or an explicit id set
+  draft: true,                           // export draft values (drafts collections)
+})
+// -> ContentBundle
+// {
+//   version: 1,
+//   documents: [
+//     { collection: 'posts', id: 'post_a', data: { /* stored field values (+ _status) */ } },
+//     { collection: 'posts', id: 'post_b', data: { /* … */ } },
+//   ],
+// }`)}
+${note(`Each entry's <code>data</code> is the collection's <strong>stored field values</strong> - plus <code>_status</code> for <a href="#/docs/versions-and-drafts">drafts-enabled</a> collections - so both <strong>identity (the id)</strong> and <strong>publish state round-trip</strong> when you sync the bundle elsewhere. The bundle is plain JSON: write it to a file, commit it, or POST it straight at the target's sync route.`)}
+
+<h2 id="sync">Sync into another environment</h2>
+<p><code>syncContent</code> applies a bundle into the current instance, <strong>keyed on the id</strong>. For each document it <strong>creates</strong> it (preserving the id) if it's missing, <strong>updates</strong> it if a field differs, and <strong>leaves it unchanged</strong> if it's already identical:</p>
+${code('ts', `const result = await kernel.syncContent({ bundle })
+// -> {
+//   created:   [{ collection, id }, …],
+//   updated:   [{ collection, id }, …],
+//   unchanged: [{ collection, id }, …],
+//   failed:    [{ collection, id, reason }, …],
+//   plan:      [{ collection, id, action: 'create' | 'update' | 'unchanged' }, …],
+//   dryRun:    false,
+// }`)}
+${warn(`Every create and update goes through the <strong>normal, access-checked pipeline</strong> - the same <code>create</code> / <code>update</code> op a direct edit takes - so <strong>access, validation, and the publish gate all apply to every applied document</strong>. A sync can't bypass them: a document that fails (no access, a validation error, a publish it isn't allowed to make) lands in <code>failed[]</code> with its reason while the rest still apply. <strong>Re-syncing the same bundle is idempotent</strong> - the second run reports every document <code>unchanged</code> and writes nothing.`)}
+${note(`To preserve identity across environments, <code>kernel.create</code> now accepts an optional <code>id</code>. Sync uses it to recreate a missing document with its original id; a <strong>duplicate id is a conflict</strong> (the existing document wins and the apply lands in <code>failed[]</code>, never a silent overwrite). You can pass <code>id</code> to <code>create</code> directly for your own imports.`)}
+
+<h2 id="dry-run">Dry run</h2>
+<p>Pass <code>dryRun: true</code> to compute the plan <strong>without writing anything</strong>. You get the same <code>created</code> / <code>updated</code> / <code>unchanged</code> / <code>failed</code> partition and <code>plan</code> you'd get from a real sync - the diff - so you can review exactly what an apply would do before you commit:</p>
+${code('ts', `const preview = await kernel.syncContent({ bundle, dryRun: true })
+// -> { created, updated, unchanged, failed, plan, dryRun: true } — nothing was written
+
+if (preview.created.length || preview.updated.length) {
+  await kernel.syncContent({ bundle }) // commit it for real
+}`)}
+${note(`A <code>dryRun</code> still runs the access checks, so it won't promise a write the real apply couldn't make - what the dry run shows as appliable is what will apply.`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Both federation routes are <strong>admin-only</strong>:</p>
+${code('http', `GET    /api/_admin/federation/export?collection=&ids=&draft=   # -> ContentBundle
+POST   /api/_admin/federation/sync                             # { bundle, dryRun? }`)}
+${code('bash', `# export 'posts' from staging, dry-run the sync into production, then apply
+curl "http://staging/api/_admin/federation/export?collection=posts&draft=true" \\
+  -H "Authorization: Bearer $STAGING_TOKEN" > bundle.json
+curl -X POST "http://prod/api/_admin/federation/sync" -H "Authorization: Bearer $PROD_TOKEN" \\
+  -d "{\\"bundle\\": $(cat bundle.json), \\"dryRun\\": true}"   # diff first
+curl -X POST "http://prod/api/_admin/federation/sync" -H "Authorization: Bearer $PROD_TOKEN" \\
+  -d "{\\"bundle\\": $(cat bundle.json)}"                       # then apply for real`)}
+
+<h2 id="security">The guarantees</h2>
+<p>Federation is a deterministic, access-checked transfer - there is no second, looser write path through a sync than through the collection it lands in:</p>
+${tip(`<ul>
+<li><strong>Stable-id round-trip.</strong> Export from A and sync into B and the documents keep the <strong>same ids</strong> - identity is part of the bundle, and <code>create</code> preserves it. Publish state round-trips too via <code>_status</code>.</li>
+<li><strong>Access-checked export.</strong> <code>exportContent</code> only includes documents the caller can <strong>read</strong>; you can never export what you can't see.</li>
+<li><strong>Access-checked, validated, publish-gated sync.</strong> Every create/update is replayed through the normal pipeline, so <strong>a sync can't elevate</strong> - anything that fails lands in <code>failed[]</code> rather than being forced through.</li>
+<li><strong>Dry-run diff first.</strong> <code>dryRun: true</code> returns the full plan without writing, so you review exactly what would change before you commit.</li>
+<li><strong>Idempotent &amp; admin-only.</strong> Re-syncing the same bundle writes nothing - every document comes back <code>unchanged</code> - and both <code>/export</code> and <code>/sync</code> are admin-gated.</li>
+</ul>`)}
+<p>Red-teamed to Risk LOW. Pairs naturally with <a href="#/docs/content-branches">content branches</a> and <a href="#/docs/releases">content releases</a> for staging a change set before it ships, and with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> for moving publish state between environments.</p>`
+    },
+    {
       slug: 'content-lifecycle', group: 'Media & operations', nav: 'Content lifecycle', title: 'Content lifecycle (expiry & archival)',
       lead: 'The inverse of scheduled publish - put an expiry on a published document and KernelCMS automatically unpublishes, archives, or deletes it when the date passes.',
       html: `
