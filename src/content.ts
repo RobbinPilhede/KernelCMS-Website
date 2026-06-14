@@ -2298,6 +2298,83 @@ ${tip(`<ul>
 <p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> and <a href="#/docs/time-machine">time-machine</a>.</p>`
     },
     {
+      slug: 'content-branches', group: 'Media & operations', nav: 'Content branches', title: 'Content branches',
+      lead: 'A named workspace where edits are staged as a copy-on-write overlay - prepare a set of changes off to the side, preview and diff them, then merge or discard - without ever touching the live document.',
+      html: `
+<p>A <strong>branch</strong> is a named workspace where you prepare a set of changes off to the side. Edits are <strong>staged</strong> as a copy-on-write overlay - the live document is never touched - so you can build up a change set, preview exactly how it would read, diff everything it would change, and only then <strong>merge</strong> it onto the live content in one move, or throw it away. It is git-for-content at the editing layer: a safe place to assemble a change set before it counts.</p>
+${code('ts', `export default defineConfig({
+  branches: true, // opt-in; provisions _branches + _branch_docs (the copy-on-write overlay)
+  collections: [/* … */],
+})`)}
+${note(`Branches are <strong>off until you opt in</strong>. Setting <code>branches: true</code> provisions two system tables - <code>_branches</code> and <code>_branch_docs</code> - that hold the overlay. Like every system table they are <strong>not</strong> reachable through generic CRUD; the overlay is only ever touched through the reviewer-gated ops below.`)}
+${warn(`<strong>Scope - be honest.</strong> This is <strong>field-level staged overlays plus a replayed merge</strong>, not git-style three-way merge with conflict resolution. A merge applies the branch's staged fields <em>over the current live document</em>; there is no common-ancestor reconciliation.`)}
+
+<h2 id="opt-in">Opt in</h2>
+<p>Enable branches per config and provision the overlay tables, then open a branch to work in:</p>
+${code('ts', `const branch = await kernel.createBranch({ name: 'autumn-pricing' })
+// -> { id, name, status: 'open' | 'merged' | 'discarded', … }
+
+const open = await kernel.listBranches({ status: 'open' }) // status? filters the list`)}
+
+<h2 id="stage">Stage edits on a branch</h2>
+<p>Stage field edits against the documents you want to change. Staging is <strong>copy-on-write</strong>: the edit is recorded on the branch's overlay and the <strong>live document is never written</strong>. Re-staging the same document deep-merges onto what's already staged:</p>
+${code('ts', `await kernel.stageChange({
+  branch: branch.name, collection: 'products', id: productId,
+  data: { price: 1900, badge: 'sale' },
+})
+
+// re-staging the same doc deep-merges (price is retained, badge overwritten)
+await kernel.stageChange({
+  branch: branch.name, collection: 'products', id: productId,
+  data: { badge: 'clearance' },
+})`)}
+${note(`<code>stageChange</code> <strong>requires update access to the target document</strong> - you can only stage an edit you could make directly. It does not write the live doc; it records the fields on the branch overlay.`)}
+
+<h2 id="preview-diff">Preview &amp; diff</h2>
+<p><code>previewBranch</code> shows the live document with the branch's staged overlay applied - what the doc <em>would</em> read like if the branch merged. <code>diffBranch</code> lists everything the branch would change, across every staged document:</p>
+${code('ts', `const preview = await kernel.previewBranch({
+  branch: branch.name, collection: 'products', id: productId,
+}) // live (access-checked) doc + staged fields on top
+
+const changes = await kernel.diffBranch({ branch: branch.name })
+// -> [{ collection, documentId, fields }, …]`)}
+${note(`<code>previewBranch</code> loads the live document through the <strong>access-checked read path</strong> before applying the overlay - a caller who can't read the document can't preview it, exactly as with a plain read.`)}
+
+<h2 id="merge-discard">Merge or discard</h2>
+<p>When the branch is ready, <strong>merge</strong> it: each staged change is replayed onto the live document through the <strong>normal, access-checked update</strong>. Or <strong>discard</strong> it and the overlay is dropped without ever reaching the live docs:</p>
+${code('ts', `const result = await kernel.mergeBranch({ branch: branch.name })
+// -> { merged: [...], failed: [...] }  — branch marked 'merged', overlay dropped
+
+await kernel.discardBranch({ branch: branch.name })
+// overlay dropped, branch marked 'discarded'`)}
+${warn(`<code>mergeBranch</code> does <strong>not</strong> write fields straight into the database. It replays each staged change through the same <code>update</code> op a direct edit takes - so the <strong>publish gate, field-level access, and validation all apply to every merged change</strong>. A change that fails (lost access, a validation error, a field the caller can no longer write) lands in <code>failed[]</code> with its reason; the rest still merge. A branch can never use a merge to bypass a gate.`)}
+
+<h2 id="rest">The REST surface</h2>
+<p>Every branch route is reviewer-gated (admin/editor):</p>
+${code('http', `GET    /api/_admin/branches                                # list (status filter)
+POST   /api/_admin/branches                                # create { name }
+GET    /api/_admin/branches/:name/diff                     # the change set
+GET    /api/_admin/branches/:name/preview?collection=&id=  # live doc + staged overlay
+POST   /api/_admin/branches/:name/stage                    # stage { collection, id, data }
+POST   /api/_admin/branches/:name/merge                    # merge (replays through update)
+POST   /api/_admin/branches/:name/discard                  # discard the overlay`)}
+${code('bash', `# stage a field edit (the live doc stays untouched), then merge it
+curl -X POST "http://localhost:3000/api/_admin/branches/autumn-pricing/stage" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -d '{"collection":"products","id":"<id>","data":{"price":1900,"badge":"sale"}}'
+curl -X POST "http://localhost:3000/api/_admin/branches/autumn-pricing/merge" -H "Authorization: Bearer $TOKEN"`)}
+
+<h2 id="security">The guarantees</h2>
+<p>A branch is a staging overlay, not a back door - there is no second, looser write path through a branch than through the collection it edits:</p>
+${tip(`<ul>
+<li><strong>The live path is untouched.</strong> Branch edits live entirely in a separate <code>_branches</code> + <code>_branch_docs</code> overlay. Staging, preview, and diff never read or write the live document's row - until you merge, the live content is exactly as it was.</li>
+<li><strong>Staging is access-checked.</strong> <code>stageChange</code> requires <strong>update access to the target</strong> - you can only stage an edit you could make directly; re-staging deep-merges.</li>
+<li><strong>Merge replays through the access-checked update.</strong> Each staged change is applied through the normal <code>update</code> op, so a branch can <strong>never bypass the publish gate, field-level access, or validation</strong>. A change that no longer passes lands in <code>failed[]</code>.</li>
+<li><strong>Reviewer-gated &amp; isolated.</strong> Branch management is admin/editor-only, <code>_branches</code> / <code>_branch_docs</code> are unreachable via generic CRUD, and create / merge / discard are audited.</li>
+</ul>`)}
+<p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a>, the <a href="#/docs/time-machine">time-machine</a>, and <a href="#/docs/releases">content releases</a>.</p>`
+    },
+    {
       slug: 'content-lifecycle', group: 'Media & operations', nav: 'Content lifecycle', title: 'Content lifecycle (expiry & archival)',
       lead: 'The inverse of scheduled publish - put an expiry on a published document and KernelCMS automatically unpublishes, archives, or deletes it when the date passes.',
       html: `
