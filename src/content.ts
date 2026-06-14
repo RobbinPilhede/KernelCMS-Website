@@ -351,6 +351,62 @@ ${tip(`Creating from a template is a <strong>normal create</strong>, not a side 
 ${warn(`The caller's <code>data</code> override is <strong>prototype-pollution-guarded</strong> (<code>__proto__</code> / <code>constructor</code> / <code>prototype</code> rejected), and the template's config is <strong>frozen</strong> so one instantiation can't change the next. Red-teamed to Risk LOW.`)}`
     },
     {
+      slug: 'content-snippets', group: 'Content modeling', nav: 'Content snippets', title: 'Content snippets',
+      lead: 'Reusable content fragments - a CTA, a promo banner, a block of legal text - defined once in a library collection and referenced from anywhere; on read the reference transcludes the live fragment, so editing it once updates every document that points at it.',
+      html: `
+<p>A <strong>content snippet</strong> is a reusable content fragment - a CTA, a promo banner, a block of legal text - that you <strong>define once and reuse everywhere</strong>. A <code>snippet</code> field is <em>just a relationship</em> to a snippet library: nothing is copied into the referencing document, only the fragment's id is stored. On read, with depth, the id is replaced by the <strong>live</strong> fragment - resolved through the normal, access-checked read path, exactly like any relationship. Edit the fragment once and every document that points at it reflects the change.</p>
+
+<h2 id="define">Define a snippet library</h2>
+<p>A snippet library is an ordinary collection flagged <code>snippet: true</code>. Its documents are the reusable fragments; fields, access rules, hooks, and the draft/publish lifecycle all behave like a normal collection:</p>
+${code('ts', `export default defineConfig({
+  collections: [
+    {
+      slug: 'snippets',
+      snippet: true,                         // this collection is a fragment library
+      fields: [
+        { name: 'label', type: 'text' },
+        { name: 'body', type: 'richText' },
+      ],
+    },
+  ],
+})`)}
+${note(`Only a collection flagged <code>snippet: true</code> may be the target of a <code>snippet</code> field. A field that points at a collection without the flag - or at a slug that doesn't exist - is <strong>rejected at config load</strong>, before the server starts, so a typo can never silently resolve to nothing.`)}
+
+<h2 id="reference">Reference a snippet</h2>
+<p>Add a <code>snippet</code>-typed field to any collection and name the library it draws from with <code>snippet: '&lt;slug&gt;'</code>. Use a single field for one fragment, or <code>hasMany: true</code> for an ordered list:</p>
+${code('ts', `export default defineConfig({
+  collections: [
+    { slug: 'snippets', snippet: true, fields: [
+      { name: 'label', type: 'text' },
+      { name: 'body', type: 'richText' },
+    ] },
+    { slug: 'pages', fields: [
+      { name: 'title', type: 'text' },
+      { name: 'cta', type: 'snippet', snippet: 'snippets' },             // one fragment
+      { name: 'banners', type: 'snippet', snippet: 'snippets', hasMany: true }, // an ordered list
+    ] },
+  ],
+})`)}
+<p>What's stored on the referencing document is <strong>only the id</strong> (or, for <code>hasMany</code>, an ordered array of ids) - never a copy of the content. That's what makes edit-once-update-everywhere work: there is one source of truth, and every reference points at it.</p>
+
+<h2 id="transclusion">Transclusion on read</h2>
+<p>A <code>snippet</code> field is populated exactly like a relationship - it expands only when the request carries <code>depth</code>. At <code>depth: 1</code> (REST <code>?depth=1</code>, Local API <code>{ depth: 1 }</code>) the stored id is replaced by the <strong>live snippet document</strong>; at <code>depth: 0</code> it stays the raw id:</p>
+${code('ts', `// id only - nothing transcluded
+const page = await kernel.findById({ collection: 'pages', id, depth: 0 })
+// page.cta === 'snp_abc'   (the stored id)
+
+// transcluded - the live fragment is inlined
+const populated = await kernel.findById({ collection: 'pages', id, depth: 1 })
+// populated.cta === { id: 'snp_abc', label: 'Get started', body: { /* live richText */ } }
+// populated.banners === [ { id: 'snp_1', … }, { id: 'snp_2', … } ]  // in stored order`)}
+${code('bash', `curl "http://localhost:3000/api/pages/$ID?depth=0"   # cta is the snippet id
+curl "http://localhost:3000/api/pages/$ID?depth=1"   # cta is the live snippet document`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`<strong>Edit-once, update-everywhere.</strong> A reference stores only the fragment's id; the content is <strong>transcluded live</strong> on read, never copied - so fixing a typo in a fragment fixes it everywhere on the next read, with no document to chase and no snapshot to go stale. A <code>snippet</code> field is a relationship to a snippet library, resolved live on read.`)}
+${warn(`<strong>Access-checked transclusion:</strong> each fragment resolves through the normal access-checked read path, and a fragment the reader can't read falls back to its <strong>raw id</strong> - never its content - exactly like a relationship to an unreadable target. <strong>Depth-bounded:</strong> snippet→snippet references are capped by the populate depth limit (10), so a cycle can never infinite-loop. <strong>Config-validated:</strong> a <code>snippet</code> field may only target a collection flagged <code>snippet: true</code>; a bad target throws at config load. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'content-comments', group: 'Content modeling', nav: 'Editorial comments', title: 'Editorial comments',
       lead: 'Threaded review annotations on a document - anchored to a field or left document-level - gated by the target document’s read access, with the author recorded from the authenticated principal.',
       html: `
