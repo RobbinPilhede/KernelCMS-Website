@@ -406,6 +406,51 @@ ${note(`<code>fallbackLocale</code> can be a locale string or <code>false</code>
     },
 
     {
+      slug: 'ai-translation', group: 'Content modeling', nav: 'AI translation', title: 'AI-assisted translation',
+      lead: 'Auto-fill every locale of your localized content with the translation provider of your choice - while keeping access control, strict validation, and human review intact.',
+      html: `
+<p>Configure a <strong>pluggable</strong> translation provider and KernelCMS auto-translates your <a href="#/docs/localization"><code>localized</code></a> fields into every locale. The provider is yours - DeepL, OpenAI, Google, a local model - KernelCMS has no hard translation dependency. Requires <code>localization</code>.</p>
+
+<h2 id="provider">Configure a provider</h2>
+<p>A provider is one function: N source strings (all in <code>from</code>) → N translations (in <code>to</code>), in order.</p>
+${code('ts', `export default defineConfig({
+  localization: { locales: ['en', 'sv', 'de'], defaultLocale: 'en' },
+  translation: {
+    translate: async ({ texts, from, to }) => {
+      const res = await deepl.translateText(texts, from, to)
+      return res.map((r) => r.text)
+    },
+  },
+  // …
+})`)}
+
+<h2 id="translate-document">Translate one document</h2>
+<p><code>kernel.translateDocument</code> reads a document's <code>from</code>-locale values for its localized text fields, translates them, and <strong>merges</strong> them into the <code>to</code> locale - other locales are never touched. By default it fills only <strong>missing</strong> values; <code>overwrite: true</code> replaces existing ones.</p>
+${code('ts', `// Fill only the empty 'sv' values; existing 'sv' stays
+await kernel.translateDocument({ collection: 'posts', id, from: 'en', to: 'sv', req })
+
+// Re-translate: replace existing 'sv' values too
+await kernel.translateDocument({ collection: 'posts', id, from: 'en', to: 'sv', overwrite: true, req })`)}
+${note(`Pass <code>fields: ['title', 'body']</code> to restrict; omit it to translate every localized text field. With nothing to translate, no provider call and no write happen.`)}
+
+<h2 id="translate-missing">Bulk-fill a collection</h2>
+<p><code>kernel.translateMissing</code> finds documents whose <code>to</code> locale is incomplete and translates each, bounded by <code>limit</code> (default 50). <code>from</code> defaults to the default locale.</p>
+${code('ts', `const { translated, skipped } = await kernel.translateMissing({ collection: 'posts', to: 'de' })
+// translated / skipped are arrays of document ids`)}
+
+<h2 id="rest">REST</h2>
+${code('bash', `# one document - gated like an update:
+curl -X POST "http://localhost:3000/api/posts/<id>/translate" -d '{"from":"en","to":"sv"}'
+
+# batch-fill a collection - admin/editor only:
+curl -X POST "http://localhost:3000/api/_admin/translate-missing" -d '{"collection":"posts","to":"de"}'`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`A translation is a <strong>normal access-checked write</strong>: the caller must be able to update the doc, strict per-locale validation still applies, and the agent draft-only brake still holds - a translation <strong>never auto-publishes</strong>. A read-denied localized field is never sent to the provider or written.`)}
+${warn(`The provider closure may hold an API key: its text and errors <strong>never leak</strong> (a failure surfaces a generic message; source/target text is never logged), and a provider fault can't corrupt the doc (no partial write). <code>from</code>/<code>to</code> must be configured locales (unknown / <code>__proto__</code> rejected). Red-teamed to Risk LOW.`)}`
+    },
+
+    {
       slug: 'personalization', group: 'Content modeling', nav: 'Personalization & A/B', title: 'Personalization & A/B experiments',
       lead: 'Audience variants from the same typed model - content that adapts to who is asking, plus built-in A/B testing.',
       html: `
