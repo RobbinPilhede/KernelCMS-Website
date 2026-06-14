@@ -2408,6 +2408,70 @@ ${warn(`<strong>SSRF: default-deny egress.</strong> A <code>url</code> must be <
 ${tip(`The signing <code>secret</code> and custom <code>headers</code> are <strong>never returned</strong> by the admin surface (<code>listWebhooks</code> / <code>GET /api/_admin/webhooks</code> are redacted) and <strong>never logged</strong>. Durable delivery is <strong>at-least-once</strong> with bounded retries (backoff capped at 1h, then <code>exhausted</code>) - dedupe on <code>id</code> + <code>event</code> + <code>timestamp</code>. Inline delivery is best-effort on top of a committed write and never breaks it. The <code>_webhook_deliveries</code> outbox is unreachable via generic CRUD, management is admin-only, and attempts are audited. Red-teamed to Risk LOW.`)}`
     },
     {
+      slug: 'saved-search-alerts', group: 'Media & operations', nav: 'Saved-search alerts', title: 'Saved-search alerts',
+      lead: 'Save a standing query - a collection plus an optional where - and get notified when matching content changes. A cron drain re-evaluates each change AS THE OWNER (access-checked reload + where match) before delivering a webhook, so an alert can never leak content the owner can\'t read.',
+      html: `
+<p>A <strong>saved-search alert</strong> (a <em>content subscription</em>) is a standing query an editor saves once - a collection plus an optional <code>where</code> - that <strong>notifies them when content matching it changes</strong>. Instead of polling the API or watching a list, you subscribe once and a cron drain delivers a webhook for every future match. An alert is <em>just a standing read</em>: each candidate change is re-evaluated <strong>as the subscription's owner</strong> (an access-checked document reload plus a <code>where</code> match) before a notification fires, so it can only ever notify on content the owner could already read. A missing claim fails <strong>closed</strong> - the alert under-notifies, never over-notifies.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Subscriptions build on the <a href="/docs/realtime">change feed</a> and <a href="/docs/webhooks">outbound webhooks</a>, so set <code>subscriptions: true</code> alongside <code>realtime: { enabled: true }</code> and at least one configured webhook to deliver on:</p>
+${code('ts', `export default defineConfig({
+  subscriptions: true,             // off by default — the whole feature is opt-in
+  realtime: { enabled: true },     // alerts read the change feed; required
+  webhooks: [
+    // A subscription-only webhook: collections: [] so it NEVER fires on content writes.
+    {
+      slug: 'alerts',
+      url: 'https://hooks.example.com/alerts',
+      secret: process.env.ALERTS_SECRET, // HMAC-SHA256 signing key
+      collections: [],                   // ← only subscriptions enqueue to it (no double-send)
+    },
+  ],
+  collections: [/* … */],
+})`)}
+<p>Subscriptions require <strong>both</strong> <code>realtime.enabled</code> (the change source) and a configured <code>webhooks</code> array (the delivery channel) - enabling <code>subscriptions</code> without them is rejected at config load. Enabling it registers a private <code>_subscriptions</code> system table, <strong>not</strong> reachable through generic CRUD.</p>
+${tip(`<strong>Give a subscription-only webhook <code>collections: []</code>.</strong> A webhook with a non-empty <code>collections</code> list <em>also</em> fires inline on every matching content write. Set <code>collections: []</code> and it fires for <strong>nothing</strong> on writes - only the subscription drain ever enqueues to it. That keeps a subscriber from getting a second, unfiltered copy of every change (no double-send), and it is the recommended shape for an alerts endpoint.`)}
+
+<h2 id="subscribe">Subscribe</h2>
+<p>All ops are on the Local API (<code>kernel</code>). The owner always comes from <code>req</code> - never the client body:</p>
+${code('ts', `const sub = await kernel.createSubscription({
+  collection: 'posts',
+  where: { section: { equals: 'sports' } }, // optional: narrows what counts as a match
+  webhook: 'alerts',                        // a configured webhook slug
+  req,                                       // the principal owns the subscription
+})
+// sub.ownerId === req.user.id   (a forged ownerId in the call is ignored)
+// sub.lastSeq is set to the current feed cursor — alerts fire on FUTURE changes only
+
+const mine = await kernel.listSubscriptions({ collection: 'posts', req }) // your own subs
+await kernel.deleteSubscription({ subscriptionId: sub.id, req })          // owner/admin -> { id }`)}
+<p>The <code>webhook</code> must be a <strong>configured slug</strong>, and the caller must be able to <strong>read</strong> <code>collection</code>. <code>where</code>, when present, is <strong>validated against the collection</strong> - every field must be real and queryable, so a subscription can never smuggle in an unknown column. <code>listSubscriptions</code> returns <strong>only the caller's own</strong> subscriptions; delete is <strong>owner-or-admin only</strong>.</p>
+${code('http', `GET    /api/_admin/subscriptions?collection=                       # list your own (auth required)
+POST   /api/_admin/subscriptions  { collection, where?, webhook }  # subscribe (201)
+DELETE /api/_admin/subscriptions/:id                               # delete (owner/admin)`)}
+${code('bash', `# subscribe as the authenticated user (owner comes from the token, not the body):
+curl -X POST "http://localhost:3000/api/_admin/subscriptions" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -d '{"collection":"posts","where":{"section":{"equals":"sports"}},"webhook":"alerts"}'`)}
+
+<h2 id="delivery">How delivery works</h2>
+<p>Nothing fires inline. A <strong>cron drain</strong> reads the change feed and re-matches each candidate change against every subscription:</p>
+${code('ts', `const { scanned, delivered } = await kernel.processSubscriptions({
+  limit: 100, // optional: max change rows to scan this pass
+})`)}
+<p>For each subscription the drain: (1) reads the change feed with <code>seq &gt; lastSeq</code> for the collection - so it only considers <strong>future</strong> changes; (2) performs an <strong>access-checked document reload as the owner</strong> and tests the subscription's <code>where</code> - a change passes only if the owner can <strong>read</strong> the doc <em>and</em> it matches; (3) enqueues a webhook delivery for each match, reusing the <strong>durable outbox</strong> (retry + backoff); (4) advances <code>lastSeq</code> so the next pass starts after the last scanned change. Run it on a schedule - it is wired into the shared jobs runner:</p>
+${code('bash', `kernel jobs:run            # drains background jobs + webhooks + due subscriptions
+kernel subscriptions:run   # drain only subscriptions (standalone)`)}
+
+<h2 id="payload">What gets delivered</h2>
+<p>A match enqueues a normal <a href="/docs/webhooks">webhook delivery</a> - a signed <code>POST</code> with the matched document, through the durable outbox with at-least-once retry. Because the document was reloaded through the <strong>owner's normal read path</strong>, the payload is <strong>field-access-stripped and encrypted-field-redacted</strong> exactly like any other read: a field the owner can't read is stripped, and an <a href="/docs/field-encryption">encrypted field</a> is redacted - never shipped as ciphertext or plaintext.</p>
+${note(`<strong>Deletes don't fire.</strong> An alert is a <em>positive</em> "content matching X now exists / changed" signal, evaluated against a <strong>live document</strong>. A <code>delete</code> removes the row, so there is nothing to reload and re-match - a deleted document never produces an alert (which is also why an alert can't leak the existence of a row the owner couldn't read).`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${warn(`<strong>Re-matched as the owner, access-scoped.</strong> Every candidate change is re-evaluated through an <strong>access-checked document reload as the subscription's owner</strong>, then matched against <code>where</code>. An alert can only ever fire for content the owner could already <strong>read</strong> - it can never leak a document (or a field) the owner can't see. When the owner's access can't be confirmed (a missing claim, a row-scoped rule that can't be re-checked), the change is <strong>dropped</strong>: the match errs toward silence, <strong>under-notifying, never over-notifying</strong>.`)}
+${tip(`The owner comes from the <strong>principal</strong> (a forged <code>ownerId</code> is ignored), and <code>listSubscriptions</code> only returns the caller's own. The <code>lastSeq</code> cursor makes alerts <strong>future-only</strong> - no backfill, no history replay. Delete is <strong>owner-or-admin</strong>. The payload is field-stripped + encrypted-redacted like a normal read, the <code>_subscriptions</code> table is unreachable via generic CRUD, and create/delete are audited (<code>subscription.create</code> / <code>subscription.delete</code>). Pairs with the change feed (the source), webhooks (the channel - give the alert webhook <code>collections: []</code>), and saved views (the same standing-query primitive for in-admin presets). Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'migrations', group: 'Media & operations', nav: 'Migrations', title: 'Migrations',
       lead: 'Diff-based, risk-classified, deterministic - and additive, so you cannot lose data by surprise.',
       html: `
