@@ -297,6 +297,60 @@ ${code('ts', `{ type: 'row', fields: [
 <p>Relationship, upload, computed, and join fields each have their own page - see <a href="#/docs/relationships">Relationships & joins</a> and <a href="#/docs/computed-fields">Computed fields</a>.</p>`
     },
     {
+      slug: 'content-templates', group: 'Content modeling', nav: 'Content templates', title: 'Content templates',
+      lead: 'Reusable document skeletons - define a landing-page layout or a standard article shell once, and give editors a "New from template" that pre-fills a document in one click.',
+      html: `
+<p>A <strong>content template</strong> is a reusable document skeleton: a landing-page block <code>layout</code>, a standard article shell, a pre-filled brief. Define it once and editors instantiate it with one "New from template" click - with all your access rules and validation intact, because creating from a template <strong>is</strong> a normal create.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Templates are off until you declare a <code>templates</code> array. Each entry names a target <code>collection</code> and a <code>data</code> object of default field values - which may include a blocks <code>layout</code>, default text, anything a document body holds:</p>
+${code('ts', `export default defineConfig({
+  templates: [
+    {
+      slug: 'landing_page',        // unique, snake_case
+      collection: 'pages',         // the collection it creates into
+      name: 'Landing page',        // optional admin label
+      description: 'Hero + feature grid + CTA',
+      data: {
+        title: 'Untitled landing page',
+        layout: [
+          { blockType: 'hero', heading: 'Headline goes here' },
+          { blockType: 'features', items: [] },
+          { blockType: 'cta', label: 'Get started', href: '/signup' },
+        ],
+      },
+    },
+  ],
+  // … a 'pages' collection with a blocks 'layout' field …
+})`)}
+${note(`<code>data</code> is <strong>deep-frozen</strong> at config load, so one instantiation can never mutate the skeleton the next one starts from - every "New from template" begins from the same pristine defaults.`)}
+
+<h2 id="list">List templates (metadata only)</h2>
+<p><code>kernel.listTemplates</code> is what the admin's picker reads. It returns only <strong>metadata</strong> - <code>slug</code>, <code>collection</code>, <code>name</code>, <code>description</code> - and <strong>never</strong> the raw <code>data</code>. Pass <code>collection</code> to scope the list:</p>
+${code('ts', `const pageTemplates = await kernel.listTemplates({ collection: 'pages' })
+// → [{ slug: 'landing_page', collection: 'pages', name: 'Landing page', description: '…' }]`)}
+
+<h2 id="create">Create from a template</h2>
+<p><code>kernel.createFromTemplate</code> looks up the template, <strong>deep-merges</strong> its defaults with the caller's <code>data</code> (the caller wins on conflicts; nested objects merge), and creates the document through the <strong>normal create pipeline</strong>. Returns the created document:</p>
+${code('ts', `const page = await kernel.createFromTemplate({
+  template: 'landing_page',
+  data: { title: 'Spring launch' }, // overrides the default; the layout is inherited
+  req,
+})`)}
+
+<h2 id="rest">REST</h2>
+${code('bash', `# list template metadata - admin/editor only:
+curl "http://localhost:3000/api/_admin/templates?collection=pages"
+
+# create from a template as the request principal - :collection must match the template's:
+curl -X POST "http://localhost:3000/api/pages/from-template" \\
+  -d '{"template":"landing_page","data":{"title":"Spring launch"}}'`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`Creating from a template is a <strong>normal create</strong>, not a side door: the collection's <code>access.create</code> rule runs (a caller who can't create can't use a template), validation and hooks fire, an agent's result is still a <strong>draft</strong> (a template setting <code>_status: 'published'</code> never publishes for an agent), and out-of-scope fields are stripped by field scope. A template only ever creates into its configured <code>collection</code> - the REST <code>:collection</code> must match.`)}
+${warn(`The caller's <code>data</code> override is <strong>prototype-pollution-guarded</strong> (<code>__proto__</code> / <code>constructor</code> / <code>prototype</code> rejected), and the template's config is <strong>frozen</strong> so one instantiation can't change the next. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'relationships', group: 'Content modeling', nav: 'Relationships & joins', title: 'Relationships & joins',
       lead: 'Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.',
       html: `
