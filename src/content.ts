@@ -1939,6 +1939,64 @@ ${tip(`<ul>
 <p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a> and <a href="#/docs/time-machine">time-machine</a>.</p>`
     },
     {
+      slug: 'content-lifecycle', group: 'Media & operations', nav: 'Content lifecycle', title: 'Content lifecycle (expiry & archival)',
+      lead: 'The inverse of scheduled publish - put an expiry on a published document and KernelCMS automatically unpublishes, archives, or deletes it when the date passes.',
+      html: `
+<p>Scheduled publish makes a draft go live at a future instant. <strong>Content lifecycle</strong> is the inverse: give a <em>published</em> document an expiry date, and when it passes KernelCMS retires it for you - unpublishing, archiving, or deleting it on the next cron drain. It is built for embargoes, time-limited campaigns, retention / compliance, and auto-retiring stale content. You set the expiry on content you can already edit; KernelCMS handles the rest on a schedule.</p>
+
+<h2 id="opt-in">Opt in</h2>
+<p>Lifecycle is off until you configure it. List the collections that should expire content, and how:</p>
+${code('ts', `export default defineConfig({
+  lifecycle: {
+    collections: [
+      { slug: 'promos', expireField: 'expire_at', onExpire: 'unpublish' },
+      { slug: 'press',  expireField: 'embargo_until', onExpire: 'archive' },
+      { slug: 'tmp',    onExpire: 'delete' }, // expireField defaults to 'expire_at'
+    ],
+  },
+  collections: [/* … */],
+})`)}
+<table class="compare"><thead><tr><th>Key</th><th class="us">Meaning</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>slug</code></td><td>The collection that expires content - must be <strong>drafts-enabled</strong>.</td><td>—</td></tr>
+<tr><td><code>expireField</code></td><td>The <code>date</code> field holding when a document expires.</td><td><code>'expire_at'</code></td></tr>
+<tr><td><code>onExpire</code></td><td><code>'unpublish'</code> | <code>'archive'</code> | <code>'delete'</code>.</td><td><code>'unpublish'</code></td></tr>
+</tbody></table>
+${warn(`Each <code>slug</code> must be a real, <a href="#/docs/versions-and-drafts">drafts-enabled</a> collection, and <code>expireField</code> must already be a <strong>declared <code>date</code> field</strong> on it. <strong>You own the schema</strong> - KernelCMS never auto-adds the column.`)}
+${code('ts', `{
+  slug: 'promos',
+  versions: { drafts: true },
+  fields: [
+    { name: 'title', type: 'text', required: true },
+    { name: 'expire_at', type: 'date' }, // YOU declare the expiry field
+  ],
+}`)}
+
+<h2 id="actions">The three actions</h2>
+<p>When a <strong>published</strong> document's <code>expireField</code> date has passed, the next drain retires it per <code>onExpire</code>:</p>
+<ul>
+<li><strong><code>unpublish</code></strong> (default) - the document goes <strong>back to draft</strong>. The inverse of a publish: it leaves the read view, the content stays put.</li>
+<li><strong><code>archive</code></strong> - draft <strong>plus</strong> a server-managed <code>_archived_at</code> timestamp. Hidden from public reads like any draft, but the stamp makes it <strong>distinguishable from a plain draft</strong> - "expired and retired" reads differently from "never published".</li>
+<li><strong><code>delete</code></strong> - the document is <strong>removed</strong>.</li>
+</ul>
+<p><code>unpublish</code> and <code>archive</code> are recoverable; <code>delete</code> is not. <code>_archived_at</code> is written <em>only</em> by the drain when it archives, and is the marker that separates an archived document from a draft that simply hasn't been published yet.</p>
+
+<h2 id="drain">Running the drain</h2>
+<p>Expiry is applied by one Local-API operation. It scans the configured collections for published documents whose <code>expireField</code> is at or before <code>now</code> and retires each:</p>
+${code('ts', `const { processed } = await kernel.processContentLifecycle({ now, limit })
+// processed: Array<{ collection, id, action }>`)}
+<p>Both arguments are optional: <code>now</code> defaults to the current time (validated), and <code>limit</code> bounds how many documents one drain retires (clamped). Like <code>processScheduledPublishes</code>, it is a <strong>trusted, cron-driven</strong> maintenance op that runs under override - there is <strong>no HTTP trigger</strong>. Drive it from a cron:</p>
+${code('bash', `# the dedicated lifecycle drain
+* * * * * cd /app && npx kernel lifecycle:run
+
+# or jobs:run - now drains scheduled publishes, releases, AND lifecycle in one pass
+* * * * * cd /app && npx kernel jobs:run`)}
+${note(`<code>kernel lifecycle:run</code> runs only the lifecycle drain; <code>kernel jobs:run</code> drains everything due in one line. Each retire is audited with a <code>content.expire</code> entry, so an expiry is as traceable as a publish or a delete.`)}
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`The drain is <strong>cron / operator-only</strong> - <code>processContentLifecycle</code> has <strong>no HTTP trigger</strong> and is never reachable from an untrusted caller. That is exactly why it can run under <code>overrideAccess</code> safely: the only way to invoke it is operator code or a cron you control. It also <strong>only ever touches the configured lifecycle collections</strong>, and <code>now</code> / <code>limit</code> are validated and clamped.`)}
+${warn(`<code>_archived_at</code> is <strong>server-managed and client-immutable</strong> - a normal user can never set it (to fake an archive) or clear it (to un-archive) through the API; only the trusted drain writes it. The <code>expireField</code> itself is an <strong>ordinary editor field</strong>: setting an expiry is a normal write, so you can only expire content you can already write. The privilege lives entirely in the drain that <em>applies</em> the expiry, not in scheduling it.`)}`
+    },
+    {
       slug: 'caching-and-search', group: 'Media & operations', nav: 'Caching & search', title: 'Caching & search',
       lead: 'Read-through caching and access-checked full-text search, both adapter-based.',
       html: `
@@ -2870,6 +2928,7 @@ npx kernel migrate          # apply the additive plan`)}
     'uploads-and-storage': { metaTitle: 'Uploads & Storage | KernelCMS Media', metaDesc: 'Upload collections, storage adapters (local disk, S3, R2), image variants, and focal points in KernelCMS, with sharp-powered image resizing.' },
     'versions-and-drafts': { metaTitle: 'Versions & Drafts | KernelCMS Publishing', metaDesc: 'Version history, a draft and publish lifecycle, scheduled publishing, and autosave in KernelCMS. Restore previous versions and control what readers see.' },
     'releases': { metaTitle: 'Content Releases | KernelCMS Atomic Publishing', metaDesc: 'Bundle draft documents and publish them together atomically in KernelCMS - optionally scheduled - for coordinated launches. All-or-nothing pre-flight, same per-doc publish gate.' },
+    'content-lifecycle': { metaTitle: 'Content Lifecycle | KernelCMS Expiry & Archival', metaDesc: 'Set an expiry on published content and KernelCMS auto-unpublishes, archives, or deletes it when the date passes. Embargoes, campaigns, retention, and stale-content cleanup on a cron drain.' },
     'caching-and-search': { metaTitle: 'Caching & Search | KernelCMS Performance', metaDesc: 'Read-through caching (memory, database, Redis) and access-checked full-text search in KernelCMS. Opt collections in, serve reads fast, and invalidate on write.' },
     'webhooks': { metaTitle: 'Webhooks | KernelCMS Event Notifications', metaDesc: 'Fire signed HTTP POST webhooks on content change in KernelCMS. Configure URL, secret, collections, and events, and verify the HMAC-SHA256 signature.' },
     'migrations': { metaTitle: 'Migrations | KernelCMS Schema Changes', metaDesc: 'Diff-based, additive, deterministic schema migrations in KernelCMS. Preview every change with migrate:status, apply safely, and never lose data by surprise.' },
