@@ -453,6 +453,59 @@ ${tip(`Applying a view is a <strong>normal, access-checked <code>find</code></st
 ${warn(`The owner is recorded from the authenticated principal, never the client body (a forged <code>ownerId</code> is ignored). A view is private unless <code>shared</code>, and a shared view is visible only to principals who can read its collection. Update/delete are <strong>owner-or-admin only</strong>; <code>_views</code> is unreachable via generic CRUD; ids/fields are prototype-pollution-guarded; create/update/delete are audited (<code>view.create</code> / <code>view.update</code> / <code>view.delete</code>). Every REST route requires auth up front. Red-teamed to Risk LOW.`)}`
     },
     {
+      slug: 'activity-timeline', group: 'Content modeling', nav: 'Activity timeline', title: 'Document activity timeline',
+      lead: 'Saved versions, editorial comments, agent-draft reviews, and audit-log entries merged into one newest-first feed for a document - gated on the document’s read access, with the reviewer-only sources folded in only for an admin/editor principal.',
+      html: `
+<p>The <strong>document activity timeline</strong> merges everything that ever happened to one document into a single, newest-first feed - instead of four separate panels an editor has to cross-reference. Saved <strong>versions</strong>, editorial <strong>comments</strong>, agent-draft <strong>reviews</strong>, and <strong>audit</strong>-log entries all land in one stream, in time order, for the document open in front of you. The whole feed is gated on the document’s <strong>read access</strong>, and the two reviewer-only sources (review + audit) are folded in only for an admin/editor principal.</p>
+
+<h2 id="read">Read the timeline</h2>
+<p><code>kernel.documentActivity</code> takes a <code>collection</code> + <code>id</code>, merges the available sources, and returns the events newest-first. <code>types</code> filters to specific kinds; <code>limit</code> caps the feed (default <code>100</code>, max <code>500</code>):</p>
+${code('ts', `const { events, includesReviewerEvents } = await kernel.documentActivity({
+  collection: 'articles',
+  id: article.id,
+  types: ['version', 'comment', 'review', 'audit'], // optional filter (default: all available)
+  limit: 100,                                        // default 100, clamped to 500
+  req,                                               // gated on the document's read access
+})
+// includesReviewerEvents === true only for an admin/editor principal`)}
+<p>Each <code>event</code> shares one shape - <code>{ type, at, actor, action, data }</code> - where <code>actor</code> is <code>{ id, type }</code> (<code>type</code> is <code>'user'</code> or <code>'agent'</code>) and <code>data</code> is the type-specific payload:</p>
+${code('ts', `// Array<{
+//   type: 'version' | 'comment' | 'review' | 'audit',
+//   at,                    // when it happened (newest-first across the whole feed)
+//   actor: { id, type },   // who did it
+//   action,                // e.g. 'saved', 'commented', 'approved', 'document.publish'
+//   data,                  // type-specific payload
+// }>`)}
+<p>The REST surface is a single read on the document. <code>types</code> is a <strong>comma-separated</strong> list of kinds; <code>limit</code> caps the feed:</p>
+${code('bash', `# the whole timeline:
+curl "http://localhost:3000/api/articles/$ID/activity" \\
+  -H "Authorization: Bearer $TOKEN"   # GET /api/:collection/:id/activity?types=&limit=
+
+# just versions and comments, last 20 events:
+curl "http://localhost:3000/api/articles/$ID/activity?types=version,comment&limit=20" \\
+  -H "Authorization: Bearer $TOKEN"`)}
+
+<h2 id="event-types">Event types</h2>
+<p>Every event shares the <code>{ type, at, actor, action, data }</code> shape; the <code>data</code> payload is what differs per source:</p>
+<table>
+<thead><tr><th><code>type</code></th><th>Source</th><th>Key <code>data</code> fields</th><th>Who sees it</th></tr></thead>
+<tbody>
+<tr><td><code>version</code></td><td>a saved snapshot</td><td><code>status</code>, <code>changedFields</code>, <code>autosave</code></td><td>any reader of the doc</td></tr>
+<tr><td><code>comment</code></td><td>an editorial comment</td><td><code>body</code>, <code>field</code>, <code>resolved</code></td><td>any reader of the doc</td></tr>
+<tr><td><code>review</code></td><td>an agent-draft review decision</td><td><code>decision</code> (<code>approved</code> / <code>changes_requested</code>), <code>note</code></td><td>reviewers only</td></tr>
+<tr><td><code>audit</code></td><td>an audit-log entry</td><td><code>action</code>, <code>fields</code>, <code>meta</code></td><td>reviewers only</td></tr>
+</tbody>
+</table>
+<p><code>version</code> and <code>comment</code> form the baseline feed every reader sees; <code>review</code> and <code>audit</code> are the reviewer-only layer, present only when <code>includesReviewerEvents</code> is <code>true</code>.</p>
+
+<h2 id="who-sees-what">Who sees what</h2>
+<p>The timeline is held to the <strong>same access bar as a read</strong>, and the reviewer-only sources sit one rung higher. The version + comment events are shown to any reader of the document (a comment follows the same gate the comment surface uses); the review + audit events are folded in <strong>only for an admin/editor principal</strong>. A non-reviewer who can read the document still gets the version + comment feed - with <code>includesReviewerEvents: false</code> and no signal a review or audit entry exists. Merging never loosens a source: version events field-strip exactly as <code>history</code> does, and a source whose feature is off (<code>versions</code> / <code>comments</code> / <code>review</code> / <code>audit</code>) is simply skipped.</p>
+
+<h2 id="guarantees">The guarantees</h2>
+${tip(`The merged feed runs the document’s <code>access.read</code> rule <strong>and</strong> row-scope up front: a caller who can’t read the document gets Forbidden/NotFound - never an event, a count, or even a hint it exists. This holds for the anonymous Local-API path too: a null-user caller is held to the read rule, with no "no user = trusted" shortcut. Each source also keeps its own rules - version events field-strip like <code>history</code> (read-denied fields never surface in <code>changedFields</code>), comments follow the comment read gate - so the merge never widens any of them.`)}
+${warn(`The <code>review</code> and <code>audit</code> sources are included <strong>only for an admin/editor principal</strong>; a non-reviewer gets <code>includesReviewerEvents: false</code> and only the version + comment feed, with no signal the reviewer events exist. A source whose feature is off contributes nothing (no error, no leak that it exists); the feed is <code>limit</code>-capped (default 100, hard max 500) and read-only - <code>documentActivity</code> never mutates a version, comment, review, or audit row. Red-teamed to Risk LOW.`)}`
+    },
+    {
       slug: 'relationships', group: 'Content modeling', nav: 'Relationships & joins', title: 'Relationships & joins',
       lead: 'Single, many, and polymorphic relationships - plus virtual reverse-relationship join fields.',
       html: `
