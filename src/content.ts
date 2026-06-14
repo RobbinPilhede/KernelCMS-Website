@@ -58,6 +58,14 @@ ${code('bash', `npm install kernelcms`)}
 <p>Then create a <code>kernel.config.ts</code> (see <a href="#/docs/quickstart">Quickstart</a>) or generate one:</p>
 ${code('bash', `npx kernel init`)}
 
+<h2 id="optional-deps">Optional dependencies</h2>
+<p>The base install is lean - <code>kernelcms</code> ships with <strong>no required runtime dependencies</strong>. The heavy integrations are <strong>optional peer dependencies</strong> you add only when you use them, so a SQLite + local-file + REST deployment never pulls them in:</p>
+${code('bash', `npm install pg                                               # only for the Postgres adapter (kernelcms/postgres)
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner # only for the S3 / R2 storage adapter
+npm install graphql                                          # only for the GraphQL endpoint (graphql: true)
+npm install @modelcontextprotocol/sdk                        # only for the MCP server (kernelcms/mcp)`)}
+${note(`The S3 adapter and the GraphQL endpoint load their dependency <strong>lazily</strong> - on first use - and surface a clear "install this package" error if it is missing. Importing <code>kernelcms</code>, <code>kernelcms/sqlite</code>, <code>kernelcms/server</code>, or the local-file storage adapter never loads any of them. See <a href="#/docs/stability">Stability &amp; versioning</a> for the full list of what the base package includes.`)}
+
 <h2 id="layout">Project layout</h2>
 <p>A typical project is small - the engine lives in <code>node_modules</code>, your content model is the code you own:</p>
 ${code('text', `my-app/
@@ -2261,12 +2269,12 @@ ${code('text', `open  ──publishRelease──▶ published      (all members 
 <li><strong>open</strong> - editable. Add and remove members freely.</li>
 <li><strong>published</strong> - every member is live, <code>publishedAt</code> is set, and the release is <strong>immutable</strong>.</li>
 <li><strong>scheduled</strong> - awaiting the cron drain; flips to <code>published</code> when due.</li>
-<li><strong>failed</strong> - a member errored partway through publishing (see the all-or-nothing note below).</li>
+<li><strong>failed</strong> - a member errored partway through publishing; the whole publish was rolled back (see the all-or-nothing note below).</li>
 </ul>
 
-<h2 id="all-or-nothing">All-or-nothing pre-flight</h2>
-<p><code>publishRelease</code> does not publish member-by-member and hope. It first <strong>dry-runs the publish gate for every member</strong> - the per-document publish access check, the agent draft-only brake, and the blocking eval / content-CI gate against each member's current draft content. If <em>any</em> member would fail, it publishes <strong>none</strong>: the call returns <code>{ status: 'failed', failed: [...] }</code> with the reasons, and the release stays <code>open</code> so you can fix and retry. Only when all members pass does it publish each one through the normal <code>publish</code> op.</p>
-${warn(`<strong>The guarantee.</strong> Publishing a release goes through the <strong>same per-document publish gate as a direct publish</strong>. A caller can only publish a release whose every member they could publish directly; an <a href="#/docs/mcp">AI agent</a> can never publish a release; and the eval gate still applies to each member. The pre-flight makes go-live all-or-nothing - it never half-launches. <em>(Honest note: the pre-flight is a full dry-run, so a fault that only surfaces mid-publish leaves the release <code>failed</code> rather than rolled back - best-effort atomic, not a transaction.)</em>`)}
+<h2 id="all-or-nothing">All-or-nothing: pre-flight <em>and</em> transaction</h2>
+<p><code>publishRelease</code> does not publish member-by-member and hope. It first <strong>dry-runs the publish gate for every member</strong> - the per-document publish access check, the agent draft-only brake, and the blocking eval / content-CI gate against each member's current draft content. If <em>any</em> member would fail, it publishes <strong>none</strong>: the call returns <code>{ status: 'failed', failed: [...] }</code> with the reasons, and the release stays <code>open</code> so you can fix and retry. Only when all members pass does it publish them - and that apply runs <strong>inside a single database transaction</strong>.</p>
+${warn(`<strong>The guarantee.</strong> Publishing a release goes through the <strong>same per-document publish gate as a direct publish</strong>. A caller can only publish a release whose every member they could publish directly; an <a href="#/docs/mcp">AI agent</a> can never publish a release; and the eval gate still applies to each member. Go-live is <strong>genuinely all-or-nothing</strong>: every member publish, its version snapshot, its content credential, and the release status flip commit in <strong>one transaction</strong>. A fault that only surfaces mid-publish - even one the dry-run could not predict - <strong>rolls the entire release back</strong>: the members already applied revert to draft, the release is marked <code>failed</code>, and nothing is left half-live. <em>(On a database adapter without transaction support the engine falls back to the historical best-effort apply; the bundled SQLite and Postgres adapters both support transactions.)</em>`)}
 
 <h2 id="scheduling">Scheduling (the cron drain)</h2>
 <p>Instead of publishing now, schedule the whole bundle for a future instant. The release moves to <code>scheduled</code> and a cron drains it when due - call <code>processScheduledReleases()</code> alongside <code>processScheduledPublishes()</code>:</p>
@@ -2370,8 +2378,14 @@ ${tip(`<ul>
 <li><strong>The live path is untouched.</strong> Branch edits live entirely in a separate <code>_branches</code> + <code>_branch_docs</code> overlay. Staging, preview, and diff never read or write the live document's row - until you merge, the live content is exactly as it was.</li>
 <li><strong>Staging is access-checked.</strong> <code>stageChange</code> requires <strong>update access to the target</strong> - you can only stage an edit you could make directly; re-staging deep-merges.</li>
 <li><strong>Merge replays through the access-checked update.</strong> Each staged change is applied through the normal <code>update</code> op, so a branch can <strong>never bypass the publish gate, field-level access, or validation</strong>. A change that no longer passes lands in <code>failed[]</code>.</li>
+<li><strong>Optional all-or-nothing merge.</strong> By default the merge applies each staged change independently (failures collect in <code>failed[]</code>). Pass <code>atomic: true</code> to run the <strong>whole merge in one transaction</strong> - if any change fails, every applied change <strong>rolls back</strong>, the overlay stays intact, and the branch stays <code>open</code> so you can fix the offending change and retry.</li>
 <li><strong>Reviewer-gated &amp; isolated.</strong> Branch management is admin/editor-only, <code>_branches</code> / <code>_branch_docs</code> are unreachable via generic CRUD, and create / merge / discard are audited.</li>
 </ul>`)}
+${code('ts', `// default: partial merge — good changes land, failures reported in failed[]
+await kernel.mergeBranch({ branch: 'autumn-pricing', req })
+
+// atomic: the whole branch merges together, or nothing does (branch stays open)
+await kernel.mergeBranch({ branch: 'autumn-pricing', atomic: true, req })`)}
 <p>Red-teamed to Risk LOW. Pairs naturally with the <a href="#/docs/versions-and-drafts">draft/publish lifecycle</a>, the <a href="#/docs/time-machine">time-machine</a>, and <a href="#/docs/releases">content releases</a>.</p>`
     },
     {
@@ -2418,6 +2432,18 @@ ${code('ts', `const result = await kernel.syncContent({ bundle })
 //   dryRun:    false,
 // }`)}
 ${warn(`Every create and update goes through the <strong>normal, access-checked pipeline</strong> - the same <code>create</code> / <code>update</code> op a direct edit takes - so <strong>access, validation, and the publish gate all apply to every applied document</strong>. A sync can't bypass them: a document that fails (no access, a validation error, a publish it isn't allowed to make) lands in <code>failed[]</code> with its reason while the rest still apply. <strong>Re-syncing the same bundle is idempotent</strong> - the second run reports every document <code>unchanged</code> and writes nothing.`)}
+
+<h2 id="atomic">All-or-nothing sync (opt-in)</h2>
+<p>By default a sync is <strong>per-document</strong>: each create/update applies independently and any failures collect in <code>failed[]</code> while the rest land. Pass <code>atomic: true</code> to apply the <strong>whole bundle in one database transaction</strong> instead - if <em>any</em> document fails, every document already applied <strong>rolls back</strong> and the sync writes nothing, so the bundle lands whole or not at all:</p>
+${code('ts', `// default: partial apply, failures reported in failed[]
+await kernel.syncContent({ bundle })
+
+// atomic: the entire bundle commits together, or nothing does
+const res = await kernel.syncContent({ bundle, atomic: true })
+if (res.failed.length) {
+  // nothing was written — res.created/updated are 0, the target is untouched
+}`)}
+${note(`Atomic mode is the right default for <strong>promoting a coordinated change set</strong> (a launch that must land whole). The per-document default is better for <strong>best-effort reconciliation</strong> where you want every good document to apply even if a few are stale. <code>atomic</code> is ignored under <code>dryRun</code> (a dry run never writes), and falls back to the per-document apply on an adapter without transaction support.`)}
 ${note(`To preserve identity across environments, <code>kernel.create</code> now accepts an optional <code>id</code>. Sync uses it to recreate a missing document with its original id; a <strong>duplicate id is a conflict</strong> (the existing document wins and the apply lands in <code>failed[]</code>, never a silent overwrite). You can pass <code>id</code> to <code>create</code> directly for your own imports.`)}
 
 <h2 id="dry-run">Dry run</h2>
@@ -2898,6 +2924,54 @@ export const runtime = 'nodejs'
 const handler = (req: Request) => kernel.server.fetch(req)
 export { handler as GET, handler as POST, handler as PUT, handler as PATCH, handler as DELETE }`)}
 <p>Keep one kernel singleton, run it on the Node.js runtime, and let your platform proxy handle rate limiting. See the <a href="#/guides/embed-nextjs">Next.js guide</a> for the full setup.</p>`
+    },
+    {
+      slug: 'stability', group: 'Media & operations', nav: 'Stability & versioning', title: 'Stability & versioning',
+      lead: 'What counts as the public API, what a version bump can change, the deprecation policy, and the road to 1.0 - the contract you build on.',
+      html: `
+<p>KernelCMS is a CMS: you build your content model, access rules, and integrations on top of it, so you need to know what a version bump can change under you. This is that contract. It applies to the published <code>kernelcms</code> package and the <code>@kernel/*</code> packages it re-exports, and the full policy lives in <a href="https://github.com/RobbinPilhede/KernelCMS/blob/main/STABILITY.md">STABILITY.md</a>.</p>
+
+<h2 id="tldr">The short version</h2>
+<ul>
+<li>We follow <a href="https://semver.org/">Semantic Versioning</a>.</li>
+<li><strong>Until 1.0</strong> (the current <code>0.x</code> line): a <strong>minor</strong> release may contain a breaking change to the public API, but every one is called out in the changelog with a migration note. A <strong>patch</strong> release never breaks the public API.</li>
+<li>A breaking change to a <strong>stable</strong> API is never silent - it ships a deprecation first wherever a runtime shim is possible.</li>
+<li><strong>Experimental</strong> APIs can change in any release without a deprecation cycle.</li>
+<li><strong>1.0 onward:</strong> standard SemVer - breaking changes to stable APIs only in a <strong>major</strong>.</li>
+</ul>
+${note(`The practical rule for the <code>0.x</code> line: <strong>pin the version you deploy</strong>, and skim the changelog for <strong>breaking</strong> / <strong>deprecated</strong> entries before you bump across a minor. That is where any required migration lives.`)}
+
+<h2 id="public-api">What is the public API</h2>
+<p>Everything you are <em>meant</em> to import and call is covered:</p>
+<ul>
+<li>The <code>defineConfig</code> configuration surface - collection, field, access, hook, auth, jobs, and plugin shapes.</li>
+<li>The <code>Kernel</code> operations returned by <code>initKernel</code> (the <a href="#/docs/local-api">Local API</a>) and the TypeScript types backing them.</li>
+<li>The HTTP surface from <code>@kernel/server</code>: the <a href="#/docs/rest-api">REST routes</a>, the <a href="#/docs/graphql">GraphQL schema</a>, and the generated OpenAPI document.</li>
+<li>The <a href="#/docs/modules">adapter contracts</a> in <code>@kernel/db</code> (database, cache, search, vector, storage).</li>
+<li>The CLI commands and flags, and the <a href="#/docs/mcp">MCP</a> tool surface generated from your model.</li>
+</ul>
+${warn(`<strong>Not public</strong> (may change in any release): deep import paths (<code>kernelcms/dist/...</code> - import from the package root only); anything prefixed with <code>_</code>, including the <strong>system tables</strong> (<code>_versions</code>, <code>_audit</code>, <code>_credentials</code>, <code>_releases</code>, <code>_branches</code>, &hellip;); the <strong>on-disk database schema and migration SQL</strong> (managed for you through <code>kernel migrate</code> - go through the API, never the raw tables); internal module structure; and exact log lines and error <em>messages</em> (the typed error <code>code</code> is stable, the human string is not).`)}
+
+<h2 id="tiers">Stability tiers</h2>
+<p>Every feature is <strong>stable</strong> unless listed as <strong>experimental</strong> here. Experimental features are fully usable and tested, but their API may still change without a deprecation cycle as we learn from real use. Experimental at the current release:</p>
+<ul>
+<li>Agentic <a href="#/docs/agentic-workflows">workflows</a>.</li>
+<li><a href="#/docs/knowledge-graph">GraphRAG</a> / knowledge-graph search and the bundled in-memory vector store (the vector <strong>adapter contract</strong> is stable; the bundled store is single-node/modest-corpus).</li>
+<li><a href="#/docs/content-federation">Content federation</a> and <a href="#/docs/content-branches">content branches</a>, including their opt-in <code>atomic</code> modes.</li>
+<li><a href="#/docs/personalization">Personalization</a> experiments / A/B assignment.</li>
+</ul>
+
+<h2 id="deprecation">Deprecation policy</h2>
+<p>When we change or remove a <strong>stable</strong> public API, we do not break it outright:</p>
+<ol>
+<li>The old API keeps working and gains a <strong>runtime deprecation warning</strong> (logged once per process) plus a <code>@deprecated</code> JSDoc tag pointing at the replacement.</li>
+<li>The deprecation, replacement, and migration are documented in the changelog.</li>
+<li>The old API is removed no sooner than the next <strong>minor</strong> (pre-1.0) or next <strong>major</strong> (1.0 onward) - never in the same release that deprecated it.</li>
+</ol>
+${note(`Where a runtime shim is impossible (a type-only change the compiler must catch), the break is still called out in the changelog with a migration note, and we aim to make the compiler error point at the fix.`)}
+
+<h2 id="road-to-1">The road to 1.0</h2>
+<p>1.0 is the point at which the stable surface stops moving without a major bump. Reaching it means: the stable public API is frozen behind the SemVer guarantee; the experimental list is empty (or each remaining item is explicitly tagged as staying experimental); a published upgrade guide between every subsequent minor; and a stated support window for the latest major.</p>`
     },
   ];
 
